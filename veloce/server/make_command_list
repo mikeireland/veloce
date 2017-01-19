@@ -1,0 +1,10 @@
+#!/bin/bash
+#Make a list of commands from the python file.
+grep 'def cmd_' $1.py | sed 's/def cmd_//g' | sed 's/^[ \t]*//' | cut -d '(' -f1 > $1.txt
+#Now turn newlines into \n
+SED_COMMAND='./make_command_help '`cat $1.txt`
+sed 's/INSERT_COMMAND_LIST/'`${SED_COMMAND}`'/g' command_list.template > temp.txt
+#Create the dictionary of functions
+SED_COMMAND='./make_command_dict '`cat $1.txt`
+sed 's/INSERT_COMMAND_DICT/'`${SED_COMMAND}`'/' temp.txt > $1_cmds.py
+rm temp.txt
