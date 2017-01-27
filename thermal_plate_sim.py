@@ -36,14 +36,24 @@ n_t = 10000
 G_frac = G_hp*G_ah/(G_hp + G_ah) + G_ps*G_sa/(G_ps + G_sa)
 A_mat = np.array([[-1/dt_damp,   0],    
                   [G_frac/C_p, -G_frac/C_p]])
-B_mat = np.array([[0, G_hp/(G_hp + G_ah)/C_p]])
+#B is a column vector.
+B_mat = np.array([[0], 
+                  [G_hp/(G_hp + G_ah)/C_p]])
 C_mat = np.array([[G_sa/(G_sa + G_ps), G_ps/(G_sa + G_ps)]])
 V_mat = np.array([[T_random**2,0],
                   [0,0]])
 W_mat = np.array([[T_noise**2]])
 
-#P_mat = la.solve_discrete_are(A_mat, C_mat, V_mat, W_mat)
-#S_mat = la.solve_discrete_are(A_mat, B_mat, Q_mat, R_mat)
+#Note that the first equation has a couple of matrices that have to be 
+#transposed for the Riccati difference equation to apply in its standard form.
+P_mat = la.solve_discrete_are(A_mat.T, C_mat.T, V_mat, W_mat)
+S_mat = la.solve_discrete_are(A_mat, B_mat, Q_mat, R_mat)
+
+#Compute the Kalman gain and Feedback gain matrices
+K_mat = np.dot(np.dot(P_mat, C_mat.T), 
+    np.inv(np.dot(np.dot(C_mat, P_mat), C_mat.T) + W_mat))
+L_mat = np.dot(np.linalg.inv(np.dot(np.dot(B_mat.T, S_mat),B_mat)),
+    np.dot(np.dot(B_mat.T, S_mat),A_mat))
 
 #Simulate without feedback for now...
 x = np.array([0.,0.])
