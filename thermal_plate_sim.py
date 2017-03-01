@@ -1,3 +1,9 @@
+"""
+This single thermal plate simulator needs documentation!
+
+What is the 
+"""
+
 from __future__ import print_function, division
 import numpy as np
 import matplotlib.pyplot as plt
@@ -22,14 +28,20 @@ T_random = 0.1
 T_noise = 0.001
 
 #Our choice on what we're trying to optimize. We have no control over the ambient
-#so forget that in the cost function. Lets only put a little weight on minimising heater
-#current.
+#so forget that in the cost function. Mike think's that a cost function with a 
+#1 in the [1,1] position is trying to minimise the RMS plate temperature. We probably
+#actually want the RMS sensor temperature minimised - what Q matrix would that require?
+#Lets only put a little weight on minimising heater current.
 Q_mat = np.array([[0,0  ],
               [0,1.0]])
 R_mat = np.array([[0.01**2]])
 
 #Number of times
 n_t = 10000
+
+#For comparision, a simple proportional servo
+servo_gain = 25 #Optimised by hand - applies to use_lqg=False
+use_lqg=False
 #------automatic below here------
 
 #Define the matrices. Note that the vector has T_a then T_p
@@ -51,17 +63,45 @@ S_mat = la.solve_discrete_are(A_mat, B_mat, Q_mat, R_mat)
 
 #Compute the Kalman gain and Feedback gain matrices
 K_mat = np.dot(np.dot(P_mat, C_mat.T), 
-    np.inv(np.dot(np.dot(C_mat, P_mat), C_mat.T) + W_mat))
+    np.linalg.inv(np.dot(np.dot(C_mat, P_mat), C_mat.T) + W_mat))
 L_mat = np.dot(np.linalg.inv(np.dot(np.dot(B_mat.T, S_mat),B_mat)),
     np.dot(np.dot(B_mat.T, S_mat),A_mat))
 
-#Simulate without feedback for now...
+#We need to store both the actual and estimated values for x
 x = np.array([0.,0.])
 x_history = np.empty( (n_t, 2) )
+x_est = np.array([0.,0.])
+x_est_history = np.empty( (n_t, 2) )
+u = np.array([0])
+u_history = np.empty( n_t )
 for i in range(n_t):
-    x += np.dot(A_mat, x)
-    x += np.random.multivariate_normal([0,0], V_mat)
-    # Now find u
+    #Compute our estimator for x_{i+1}
+    #First, what do we measure at this time?
+    y = np.dot(C_mat, x) 
+    y += np.random.multivariate_normal([0], W_mat)
     
+    #Based on this measurement, what is the next value of x_est?
+    x_est_new = np.dot(A_mat, x_est)
+    x_est_new += np.dot(B_mat, u)
+    dummy = y - np.dot(C_mat, (np.dot(A_mat, x) + np.dot(B_mat, u)))
+    x_est_new += np.dot(K_mat, dummy)
+    x_est = x_est_new
+    x_est_history[i]=x_est
+    
+    # Now find u
+    if use_lqg:
+        u = -np.dot(L_mat, x_est)
+    else:
+        u = -servo_gain*y
+    u_history[i] = u
+
+    #Compute the actual x_i+1
+    x += np.dot(A_mat, x)
+    x += np.dot(B_mat, u)
+    x += np.random.multivariate_normal([0,0], V_mat)
+  
     #Save our history.
     x_history[i]=x
+    
+#Now what is our RMS?
+print("RMS plate temperature: {0:6.4f}".format(np.std(x_history[:,1]))) 
