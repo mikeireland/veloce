@@ -6,11 +6,14 @@ Version history
 ---------------
 0.1     19 Jan 2017     MJI     Skeleton only
 """
-
+import numpy as np
 from labjack import ljm
-LABJACK_IP = "192.168.1.3"
+import time
+
+LABJACK_IP = "150.203.91.171"
 HEATER_DIOS = ["0"]         #Input/output indices of the heaters
 PWM_MAX =1000000
+AIN_NAME = "AIN0"
 
 class ThermalControl:
     def __init__(self, ip=None):
@@ -25,7 +28,10 @@ class ThermalControl:
         self.labjack_open=True
         #WARNING: This really should read from the labjack, and set the heater values
         #appropriately
-        self.cmd_initialize()
+        self.cmd_initialize("")
+        self.voltage=99.9
+        self.nreads=int(0)
+        self.last_print=-1
 
     #Our user or socket commands
     def cmd_initialize(self, the_command):
@@ -44,12 +50,21 @@ class ThermalControl:
         self.current_heaters = np.zeros(len(HEATER_DIOS))
         aNames = ["DIO_EF_CLOCK0_DIVISOR", "DIO_EF_CLOCK0_ROLL_VALUE", "DIO_EF_CLOCK0_ENABLE"]
         #Set the first number below to 256 for testing on a multimeter.
+        #Set to 8 for normal operation
         aValues = [8, PWM_MAX, 1]
         for dio in HEATER_DIOS:
             aNames.extend(["DIO"+dio+"_EF_INDEX", "DIO"+dio+"_EF_CONFIG_A", "DIO"+dio+"_EF_ENABLE"])
             aValues.extend([0,0,1])
 
         #See labjack example python scripts - looks pretty simple!
+        numFrames = len(aNames)
+        results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+        
+        #Now set up the Analog input
+        #Note that the settling time is set to default (0), which isn't actually
+        #zero microsecs.
+        aNames = ["AIN_ALL_NEGATIVE_CH", "AIN_ALL_RANGE", "AIN_ALL_RESOLUTION_INDEX", "AIN_ALL_SETTLING_US"]
+        aValues = [1, 1, 10, 0]
         numFrames = len(aNames)
         results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
         
@@ -90,6 +105,7 @@ class ThermalControl:
         aValues = [int(fraction * PWM_MAX)]
         numFrames = len(aNames)
         results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+        return "Done."
         
     def cmd_setgain(self, the_command):
         """Dummy gain setting function"""
@@ -98,7 +114,17 @@ class ThermalControl:
             return "Useage: SETGAIN [newgain]"
         else:
             return "Gain not set to {}".format(the_command[1:])
+            
         
     def job_doservo(self):
-        """Dummy servo loop job"""
+        """Dummy servo loop job
+        
+        Just read the voltage, and print once per second 
+        (plus the number of reads)"""
+        self.voltage = ljm.eReadName(self.handle, AIN_NAME)
+        time.sleep(.2)
+        self.nreads += 1
+        if time.time() > self.last_print + 1:
+            self.last_print=time.time()
+            print("Voltage: {0:9.6f}".format(self.voltage))
         return
