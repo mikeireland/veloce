@@ -115,6 +115,10 @@ class ThermalControl:
         else:
             return "Gain not set to {}".format(the_command[1:])
             
+    def cmd_getvs(self, the_command):
+        """Return the current voltages as a string.
+        """
+        return "{0:9.6f}".format(self.voltage)
         
     def job_doservo(self):
         """Dummy servo loop job
@@ -126,5 +130,5 @@ class ThermalControl:
         self.nreads += 1
         if time.time() > self.last_print + 1:
             self.last_print=time.time()
-            print("Voltage: {0:9.6f}".format(self.voltage))
+        #    print("Voltage: {0:9.6f}".format(self.voltage))
         return

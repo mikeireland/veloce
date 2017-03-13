@@ -32,7 +32,7 @@ class CommandList():
     
         This returns a string containing the response, or a -1 if a quit is commanded.'''
         m = self.module_with_functions
-        the_functions = dict(initialize=m.cmd_initialize,close=m.cmd_close,heater=m.cmd_heater,setgain=m.cmd_setgain)
+        the_functions = dict(initialize=m.cmd_initialize,close=m.cmd_close,heater=m.cmd_heater,setgain=m.cmd_setgain,getvs=m.cmd_getvs)
         commands = the_command.split()
         #Make sure we ignore case.
         commands[0] = commands[0].lower()
@@ -40,7 +40,7 @@ class CommandList():
             return ""
         if commands[0] == "help":
             if (len(commands) == 1):
-                return '** Available Commands **\nexit\ninitialize\nclose\nheater\nsetgain\n'
+                return '** Available Commands **\nexit\ninitialize\nclose\nheater\nsetgain\ngetvs\n'
             elif commands[1] in the_functions:
                 td=pydoc.TextDoc()
                 return td.docroutine(the_functions[commands[1]])

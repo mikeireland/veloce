@@ -2,3 +2,4 @@ initialize
 close
 heater
 setgain
+getvs
