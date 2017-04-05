@@ -19,7 +19,7 @@ G_hp = 10.0
 C_p = 100.0
 
 #Define our input noise damping time
-dt_damp = 1000.0
+dt_damp = 100.0
 
 #Random changes for ambient per timestep
 T_random = 0.1
@@ -41,7 +41,7 @@ n_t = 10000
 
 #For comparision, a simple proportional servo
 servo_gain = 25 #Optimised by hand - applies to use_lqg=False
-use_lqg=False
+use_lqg=0
 #------automatic below here------
 
 #Define the matrices. Note that the vector has T_a then T_p

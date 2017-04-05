@@ -3,3 +3,6 @@ close
 heater
 setgain
 getvs
+gettemp
+lqgstart
+lqgstop
