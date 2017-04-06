@@ -14,6 +14,7 @@ from datetime import datetime
 import struct
 import pdb
 
+DEBUG=True
 SECRET_CODE = 314159
 DTYPES = {str:0, int:1, float:2, "image":3}
 
@@ -118,9 +119,12 @@ class ServerSocket:
                                 print("WARNING: Unknown response type!")
                                 s.send("")
             for the_job in self.jobs:
-                try: message=the_job()
-                except:
-                    raise UserWarning('Unable to do the '+the_job.__name__+' function. Check if the hardward needed is connected.')
+                if DEBUG:
+                    message=the_job()
+                else:
+                    try: message=the_job()
+                    except:
+                        raise UserWarning('Unable to do the '+the_job.__name__+' function. Check if the hardward needed is connected.')
                 if message:
                     print(message)
                     #ISSUE: No way to get these messages to clients with the client-server model.

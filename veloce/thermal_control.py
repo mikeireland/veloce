@@ -39,7 +39,7 @@ class ThermalControl:
         self.cmd_initialize("")
         self.voltage=99.9
         self.lqg=0
-        self.setpoint = 30
+        self.setpoint = 28
         self.nreads=int(0)
         self.last_print=-1
 
@@ -241,7 +241,7 @@ class ThermalControl:
             #!!! MATTHEW - this next line is great for debugging !!!
             #!!! Uncomment it to look at variables, e.g. print(y)
             #!!! and y.shape
-            import pdb; pdb.set_trace()
+            #import pdb; pdb.set_trace()
             
             #Get the current temperature and set it to . 
             y[0] = self.gettemp() - self.setpoint
@@ -256,14 +256,16 @@ class ThermalControl:
             # Now find u
             if use_lqg:
                 u = -np.dot(L_mat, x_est)
-                fraction = u/3.409
+                #!!!Put in an offset of 0.5, i.e. the heater half
+                #on is at "zero", because it can't go negative.
+                fraction = u[0]/3.409 + 0.5
                 if fraction < 0:
                     fraction = 0
 
                 if fraction > 1:
                     fraction = 1
-
-                aNames = ["DIO"+dio+"_EF_CONFIG_A"]
+                #FIXME: This assumes we are using heater 0.
+                aNames = ["DIO"+HEATER_DIOS[0]+"_EF_CONFIG_A"]
                 aValues = [int(fraction * PWM_MAX)]
                 numFrames = len(aNames)
                 results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
@@ -272,7 +274,8 @@ class ThermalControl:
             x += np.dot(A_mat, x)
             x += np.dot(B_mat, u)
             x += np.random.multivariate_normal([0,0], V_mat)
-            print("Heater Wattage: {0:9.6f}".format(u))
+            #!!!Another error here, u was an array, so numpy prints it as a string
+            print("Heater Wattage: {0:9.6f}".format(u[0]))
             print("Heater Fraction: {0:9.6f}".format(fraction))
             
         return 
