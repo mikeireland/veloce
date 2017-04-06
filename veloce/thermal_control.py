@@ -130,7 +130,8 @@ class ThermalControl:
         """
         return "{0:9.6f}".format(self.voltage)
 
-    def cmd_gettemp(self, the_command):
+    def gettemp(self):
+        """Return the temperature as a float"""
         ##uses converts voltage temperature, resistance implemented
         R = 10000
         Vin = 5
@@ -142,7 +143,11 @@ class ThermalControl:
         temp_inv = aVal + bVal*math.log(resistance) + cVal*((math.log(resistance))**3)
         tempKelv = 1/(temp_inv)
         tempCelc = tempKelv -273.15
-        return "{0:9.6f}".format(tempCelc)
+        return tempCelc
+
+    def cmd_gettemp(self, the_command):
+        """Return the temperature to the client as a string"""
+        return "{0:9.6f}".format(self.gettemp())
 
     def cmd_lqgstart(self, the_command):
         lqg = 1
@@ -232,8 +237,14 @@ class ThermalControl:
             #Compute our estimator for x_{i+1}
             #First, what do we measure at this time?
             y = np.dot(C_mat, x) 
-            """
-            y[2,1] = self.cmd_gettemp(self,"") - self.setpoint
+            
+            #!!! MATTHEW - this next line is great for debugging !!!
+            #!!! Uncomment it to look at variables, e.g. print(y)
+            #!!! and y.shape
+            import pdb; pdb.set_trace()
+            
+            #Get the current temperature and set it to . 
+            y[0] = self.gettemp() - self.setpoint
             
             #Based on this measurement, what is the next value of x_est?
             x_est_new = np.dot(A_mat, x_est)
@@ -263,5 +274,5 @@ class ThermalControl:
             x += np.random.multivariate_normal([0,0], V_mat)
             print("Heater Wattage: {0:9.6f}".format(u))
             print("Heater Fraction: {0:9.6f}".format(fraction))
-            """
-        return
+            
+        return 
