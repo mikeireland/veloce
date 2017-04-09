@@ -212,13 +212,21 @@ class ThermalControl:
             #1 in the [1,1] position is trying to minimise the RMS plate temperature. We 
             #actually want the RMS sensor temperature minimised - what Q matrix would that 
             #Lets only put a little weight on minimising heater current.
+            #FIXME: Delete this when the Q_mat below is tested.
             Q_mat = np.array([[0,0  ],
                 [0,1.0]])
+                
+            #Better Q matrix, which needs checking
+            linear_comb = np.array([[G_sa, G_ps]])
+            Q_mat = Q_mat = np.dot(linear_comb.T, linear_comb)
+            Q_mat /= Q_mat[1,1] #Normalise for easy comparison to R_mat.
+            
+            #The "R" matrix, which balances wanting small heater outputs with maintaining
+            #temperature.
+            #FIXME: This seems to bias the algorithm if heater outputs can only be 
+            #positive.
             R_mat = np.array([[0.01**2]])
 
-            #Number of times
-                    
-            
             #For comparision, a simple proportional servo
             servo_gain = 25 #Optimised by hand - applies to use_lqg=False
             use_lqg=1
