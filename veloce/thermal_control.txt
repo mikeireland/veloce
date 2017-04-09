@@ -5,4 +5,9 @@ setgain
 getvs
 gettemp
 lqgstart
+lqgsilent
+lqgverbose
+startrec
+stoprec
+writedata
 lqgstop

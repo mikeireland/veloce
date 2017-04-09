@@ -39,9 +39,14 @@ class ThermalControl:
         self.cmd_initialize("")
         self.voltage=99.9
         self.lqg=0
-        self.setpoint = 28
+        self.datapoints=10000
+        self.storedata = 0
+        self.setpoint = 25
         self.nreads=int(0)
         self.last_print=-1
+        self.index = 0
+        self.temphist = np.empty([self.datapoints])
+        self.lqgverbose = 0
 
     #Our user or socket commands
     def cmd_initialize(self, the_command):
@@ -150,10 +155,25 @@ class ThermalControl:
         return "{0:9.6f}".format(self.gettemp())
 
     def cmd_lqgstart(self, the_command):
-        lqg = 1
+        self.lqg = 1
+    
+    def cmd_lqgsilent(self, the_command):
+        self.lqgverbose = 0
+    
+    def cmd_lqgverbose(self, the_command):
+        self.lqgverbose = 1
+
+    def cmd_startrec(self, the_command):
+        self.storedata = 1
+
+    def cmd_stoprec(self, the_command):
+        self.storedata = 0
+
+    def cmd_writedata(self, the_command):
+        np.savetxt('data.txt',self.temphist, fmt='%9.6f', delimiter=',')          
 
     def cmd_lqgstop(self, the_command):
-        lqg = 0 
+        self.lqg = 0 
 
     def job_doservo(self):
         """Dummy servo loop job
@@ -168,18 +188,19 @@ class ThermalControl:
         #    print("Voltage: {0:9.6f}".format(self.voltage))
        
         
-            
+        if self.lqg == 1:
+               
             #Define thermal conductivities. Units: Watts/K.
-            G_sa = 1.0
-            G_ah = 1.0
+            G_sa = 1.25
+            G_ah = 1
             G_ps = 10.0
             G_hp = 10.0
             
             #Define thermal capacitance. Units: Joules/K.
-            C_p = 100.0
+            C_p = 860.0
 
             #Define our input noise damping time
-            dt_damp = 100.0
+            dt_damp = 1000.0
 
             #Random changes for ambient per timestep
             T_random = 0.1
@@ -243,8 +264,19 @@ class ThermalControl:
             #!!! and y.shape
             #import pdb; pdb.set_trace()
             
-            #Get the current temperature and set it to . 
-            y[0] = self.gettemp() - self.setpoint
+            #Get the current temperature and set it to .
+            tempnow = self.gettemp() 
+            y[0] = tempnow - self.setpoint
+            
+            #store temperature history for data measurment
+            if self.index == self.datapoints:
+               np.savetxt('data.txt',self.temphist, fmt='%9.6f', delimiter=',')
+               self.storedata = 0
+               self.lqg = 0
+               
+            if self.storedata == 1:
+               self.temphist[self.index] = tempnow
+               self.index = self.index + 1
             
             #Based on this measurement, what is the next value of x_est?
             x_est_new = np.dot(A_mat, x_est)
@@ -258,7 +290,7 @@ class ThermalControl:
                 u = -np.dot(L_mat, x_est)
                 #!!!Put in an offset of 0.5, i.e. the heater half
                 #on is at "zero", because it can't go negative.
-                fraction = u[0]/3.409 + 0.5
+                fraction = u[0]/3.409 + 0.33
                 if fraction < 0:
                     fraction = 0
 
@@ -275,7 +307,13 @@ class ThermalControl:
             x += np.dot(B_mat, u)
             x += np.random.multivariate_normal([0,0], V_mat)
             #!!!Another error here, u was an array, so numpy prints it as a string
-            print("Heater Wattage: {0:9.6f}".format(u[0]))
-            print("Heater Fraction: {0:9.6f}".format(fraction))
+            if self.lqgverbose == 1:
+                print("Heater Wattage: {0:9.6f}".format(u[0]))
+                print("Heater Fraction: {0:9.6f}".format(fraction))
+                print("Temperature: {0:9.6f}".format(self.gettemp()))
+                print("Data Index: {0:9.6f}".format(self.index))
+
+
+
             
         return 
