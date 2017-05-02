@@ -36,6 +36,7 @@ class ThermalControl:
         self.labjack_open=True
         #WARNING: This really should read from the labjack, and set the heater values
         #appropriately
+        self.dt=1.0
         self.cmd_initialize("")
         self.voltage=99.9
         self.lqg=0
@@ -47,6 +48,7 @@ class ThermalControl:
         self.index = 0
         self.temphist = np.empty([self.datapoints])
         self.lqgverbose = 0
+        self.x_est = np.array([0.,0.])
 
     #Our user or socket commands
     def cmd_initialize(self, the_command):
@@ -181,7 +183,7 @@ class ThermalControl:
         Just read the voltage, and print once per second 
         (plus the number of reads)"""
         self.voltage = ljm.eReadName(self.handle, AIN_NAME)
-        time.sleep(.2)
+        time.sleep(self.dt)
         self.nreads += 1
         if time.time() > self.last_print + 1:
             self.last_print=time.time()
@@ -202,8 +204,9 @@ class ThermalControl:
             #Define our input noise damping time
             dt_damp = 1000.0
 
-            #Random changes for ambient per timestep
-            T_random = 0.1
+            #Random changes for ambient per timestep, in K.
+            #FIXME: this should probably automatically change when the timestep changes
+            T_random = 0.01
 
             #Measurement noise per timestep
             T_noise = 0.001
@@ -213,13 +216,15 @@ class ThermalControl:
             #actually want the RMS sensor temperature minimised - what Q matrix would that 
             #Lets only put a little weight on minimising heater current.
             #FIXME: Delete this when the Q_mat below is tested.
-            Q_mat = np.array([[0,0  ],
-                [0,1.0]])
+            #Q_mat = np.array([[0,0  ],
+            #    [0,1.0]])
                 
             #Better Q matrix, which needs checking
             linear_comb = np.array([[G_sa, G_ps]])
-            Q_mat = Q_mat = np.dot(linear_comb.T, linear_comb)
-            Q_mat /= Q_mat[1,1] #Normalise for easy comparison to R_mat.
+            Q_mat = np.dot(linear_comb.T, linear_comb)
+            #To minimise the squared 
+            #sensor temperature, we divide by (G_sa + G_ps)**2, which is almost the same.
+            Q_mat /= (G_sa + G_ps)**2
             
             #The "R" matrix, which balances wanting small heater outputs with maintaining
             #temperature.
@@ -236,9 +241,17 @@ class ThermalControl:
             G_frac = G_hp*G_ah/(G_hp + G_ah) + G_ps*G_sa/(G_ps + G_sa)
             A_mat = np.array([[-1/dt_damp,   0],    
                        [G_frac/C_p, -G_frac/C_p]])
+            #Scale A_mat by the timestep and add the identity matrix because we are
+            #operating discrete time
+            #FIXME: Not 100% certain that this is correct.
+            A_mat = np.eye(len(A_mat)) + dt*A_mat
+                       
             #B is a column vector.
             B_mat = np.array([[0], 
                 [G_hp/(G_hp + G_ah)/C_p]])
+            #Scale by the timestep
+            B_mat *= dt
+            
             C_mat = np.array([[G_sa/(G_sa + G_ps), G_ps/(G_sa + G_ps)]])
             V_mat = np.array([[T_random**2,0],
                                       [0,0]])
@@ -258,14 +271,15 @@ class ThermalControl:
             #We need to store both the actual and estimated values for x
             x = np.array([0.,0.])
             #x_history = np.empty( (n_t, 2) )
-            x_est = np.array([0.,0.])
+
             #x_est_history = np.empty( (n_t, 2) )
             u = np.array([0])
             #u_history = np.empty( n_t )
             
             #Compute our estimator for x_{i+1}
-            #First, what do we measure at this time?
-            y = np.dot(C_mat, x) 
+            #First, what do we measure at this time? This is only for simulation,
+            #because we actually make a measurement!
+            #y = np.dot(C_mat, x) 
             
             #!!! MATTHEW - this next line is great for debugging !!!
             #!!! Uncomment it to look at variables, e.g. print(y)
@@ -287,15 +301,15 @@ class ThermalControl:
                self.index = self.index + 1
             
             #Based on this measurement, what is the next value of x_est?
-            x_est_new = np.dot(A_mat, x_est)
+            x_est_new = np.dot(A_mat, self.x_est)
             x_est_new += np.dot(B_mat, u)
             dummy = y - np.dot(C_mat, (np.dot(A_mat, x) + np.dot(B_mat, u)))
             x_est_new += np.dot(K_mat, dummy)
-            x_est = x_est_new
+            self.x_est = x_est_new
             
             # Now find u
             if use_lqg:
-                u = -np.dot(L_mat, x_est)
+                u = -np.dot(L_mat, self.x_est)
                 #!!!Put in an offset of 0.5, i.e. the heater half
                 #on is at "zero", because it can't go negative.
                 fraction = u[0]/3.409 + 0.33
