@@ -22,6 +22,7 @@ LABJACK_IP = "150.203.91.171"
 HEATER_DIOS = ["0"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 AIN_NAME = "AIN0"
+HEATER_MAX = 3.409
 
 class ThermalControl:
     def __init__(self, ip=None):
@@ -48,7 +49,8 @@ class ThermalControl:
         self.index = 0
         self.temphist = np.empty([self.datapoints])
         self.lqgverbose = 0
-        self.x_est = np.array([0.,0.])
+        self.x_est = np.array([[0.],[0.]])
+        self.u = np.array([[0]])
 
     #Our user or socket commands
     def cmd_initialize(self, the_command):
@@ -193,13 +195,13 @@ class ThermalControl:
         if self.lqg == 1:
                
             #Define thermal conductivities. Units: Watts/K.
-            G_sa = 1.25
-            G_ah = 1
-            G_ps = 10.0
-            G_hp = 10.0
+            G_sa = 1. #Vacuum radiative coupling would be 0
+            G_ah = 1.
+            G_ps = 1000.0
+            G_hp = 1000.0
             
             #Define thermal capacitance. Units: Joules/K.
-            C_p = 860.0
+            C_p = 393.0 #Should be 393. Oritinally 860.0
 
             #Define our input noise damping time
             dt_damp = 1000.0
@@ -244,13 +246,13 @@ class ThermalControl:
             #Scale A_mat by the timestep and add the identity matrix because we are
             #operating discrete time
             #FIXME: Not 100% certain that this is correct.
-            A_mat = np.eye(len(A_mat)) + dt*A_mat
+            A_mat = np.eye(len(A_mat)) + self.dt*A_mat
                        
             #B is a column vector.
             B_mat = np.array([[0], 
                 [G_hp/(G_hp + G_ah)/C_p]])
             #Scale by the timestep
-            B_mat *= dt
+            B_mat *= self.dt
             
             C_mat = np.array([[G_sa/(G_sa + G_ps), G_ps/(G_sa + G_ps)]])
             V_mat = np.array([[T_random**2,0],
@@ -269,11 +271,11 @@ class ThermalControl:
                 np.dot(np.dot(B_mat.T, S_mat),A_mat))
 
             #We need to store both the actual and estimated values for x
-            x = np.array([0.,0.])
+            #x = np.array([[0.],[0.]])
             #x_history = np.empty( (n_t, 2) )
 
             #x_est_history = np.empty( (n_t, 2) )
-            u = np.array([0])
+            #u = np.array([[0]])
             #u_history = np.empty( n_t )
             
             #Compute our estimator for x_{i+1}
@@ -288,6 +290,7 @@ class ThermalControl:
             
             #Get the current temperature and set it to .
             tempnow = self.gettemp() 
+            y = np.zeros( (1,1) )
             y[0] = tempnow - self.setpoint
             
             #store temperature history for data measurment
@@ -302,22 +305,22 @@ class ThermalControl:
             
             #Based on this measurement, what is the next value of x_est?
             x_est_new = np.dot(A_mat, self.x_est)
-            x_est_new += np.dot(B_mat, u)
-            dummy = y - np.dot(C_mat, (np.dot(A_mat, x) + np.dot(B_mat, u)))
+            x_est_new += np.dot(B_mat, self.u)
+            dummy = y - np.dot(C_mat, (np.dot(A_mat, self.x_est) + np.dot(B_mat, self.u)))
             x_est_new += np.dot(K_mat, dummy)
             self.x_est = x_est_new
             
             # Now find u
             if use_lqg:
-                u = -np.dot(L_mat, self.x_est)
+                self.u = -np.dot(L_mat, self.x_est)
+                if self.u[0,0] < 0:
+                    self.u[0,0] = 0
+                elif self.u[0,0] > HEATER_MAX:
+                    self.u[0,0] = HEATER_MAX
                 #!!!Put in an offset of 0.5, i.e. the heater half
                 #on is at "zero", because it can't go negative.
-                fraction = u[0]/3.409 + 0.33
-                if fraction < 0:
-                    fraction = 0
-
-                if fraction > 1:
-                    fraction = 1
+                fraction = self.u[0,0]/HEATER_MAX 
+                
                 #FIXME: This assumes we are using heater 0.
                 aNames = ["DIO"+HEATER_DIOS[0]+"_EF_CONFIG_A"]
                 aValues = [int(fraction * PWM_MAX)]
@@ -325,15 +328,16 @@ class ThermalControl:
                 results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
 
              #Compute the actual x_i+1
-            x += np.dot(A_mat, x)
-            x += np.dot(B_mat, u)
-            x += np.random.multivariate_normal([0,0], V_mat)
+            #x += np.dot(A_mat, x)
+            #x += np.dot(B_mat, u)
+            #x += np.random.multivariate_normal([0,0], V_mat)
             #!!!Another error here, u was an array, so numpy prints it as a string
             if self.lqgverbose == 1:
-                print("Heater Wattage: {0:9.6f}".format(u[0]))
+                print("Heater Wattage: {0:9.6f}".format(self.u[0,0]))
                 print("Heater Fraction: {0:9.6f}".format(fraction))
                 print("Temperature: {0:9.6f}".format(self.gettemp()))
                 print("Data Index: {0:9.6f}".format(self.index))
+                print("Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
 
 
 
