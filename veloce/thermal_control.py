@@ -43,7 +43,7 @@ class ThermalControl:
         self.lqg=0
         self.datapoints=10000
         self.storedata = 0
-        self.setpoint = 25
+        self.setpoint = 25.0
         self.nreads=int(0)
         self.last_print=-1
         self.index = 0
@@ -195,8 +195,12 @@ class ThermalControl:
         if self.lqg == 1:
                
             #Define thermal conductivities. Units: Watts/K.
-            G_sa = 1. #Vacuum radiative coupling would be 0
-            G_ah = 1.
+            #with 3.409W (HEATER_MAX) on, we have an equilibrium
+            #temperature about 11 degrees above ambient. This
+            #equates to a coupling of 0.15 Watts/K for each side
+            #of the plate. 
+            G_sa = 0.15 #Vacuum radiative coupling would be 0.1, with black surfaces.
+            G_ah = 0.15
             G_ps = 1000.0
             G_hp = 1000.0
             
