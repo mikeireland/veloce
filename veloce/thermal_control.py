@@ -48,8 +48,8 @@ class ThermalControl:
         self.last_print=-1
         self.index = 0
         self.temphist = np.empty([self.datapoints])
-        self.lqgverbose = 0
-        self.x_est = np.array([[0.],[0.]])
+        self.lqgverbose = 1
+        self.x_est = np.array([[0.],[0.],[0.]])
         self.u = np.array([[0]])
 
     #Our user or socket commands
@@ -203,12 +203,12 @@ class ThermalControl:
             G_ah = 0.15
             G_ps = 1000.0
             G_hp = 1000.0
-            
+            G_ih = 18
             #Define thermal capacitance. Units: Joules/K.
             C_p = 393.0 #Should be 393. Oritinally 860.0
-
+            C_h = 44
             #Define our input noise damping time
-            dt_damp = 1000.0
+            dt_damp = 10000.0
 
             #Random changes for ambient per timestep, in K.
             #FIXME: this should probably automatically change when the timestep changes
@@ -226,11 +226,14 @@ class ThermalControl:
             #    [0,1.0]])
                 
             #Better Q matrix, which needs checking
-            linear_comb = np.array([[G_sa, G_ps]])
-            Q_mat = np.dot(linear_comb.T, linear_comb)
+            
+            Q_mat = np.array([[(G_sa**2)/((G_ps+G_sa)**2), 0,G_sa*G_ps/((G_ps+G_sa)**2)],
+                                [0,0,0],
+                                [G_sa*G_ps/((G_ps+G_sa)**2), 0, (G_ps**2)/((G_ps+G_sa)**2)]])
             #To minimise the squared 
             #sensor temperature, we divide by (G_sa + G_ps)**2, which is almost the same.
-            Q_mat /= (G_sa + G_ps)**2
+            
+            
             
             #The "R" matrix, which balances wanting small heater outputs with maintaining
             #temperature.
@@ -243,10 +246,11 @@ class ThermalControl:
             use_lqg=1
             #------automatic below here------
             
-            #Define the matrices. Note that the vector has T_a then T_p
+            #Define the matrices. Note that the vector has T_a then T_i then T_p
             G_frac = G_hp*G_ah/(G_hp + G_ah) + G_ps*G_sa/(G_ps + G_sa)
-            A_mat = np.array([[-1/dt_damp,   0],    
-                       [G_frac/C_p, -G_frac/C_p]])
+            A_mat = np.array([[-1/dt_damp,   0, 0],    
+                       [G_ah*G_ih/(C_h*(G_ah+G_hp+G_ih)), (1/C_h)*((G_ih**2)/(G_ah+G_hp+G_ih)-G_ih), G_hp*G_ih/(C_h*(G_ah+G_hp+G_ih))],
+                   [(1/C_p)*(-G_ah*G_hp/(G_ah+G_hp+G_ih)-G_ps*G_sa/(G_ps+G_sa)), -G_hp*G_ih/(C_p*(G_ah+G_hp+G_ih)), (1/C_p)*(G_hp-(G_hp**2)/(G_ah+G_hp+G_ih)+G_ps-(G_ps**2)/(G_ps+G_sa))]])
             #Scale A_mat by the timestep and add the identity matrix because we are
             #operating discrete time
             #FIXME: Not 100% certain that this is correct.
@@ -254,13 +258,15 @@ class ThermalControl:
                        
             #B is a column vector.
             B_mat = np.array([[0], 
-                [G_hp/(G_hp + G_ah)/C_p]])
+                [1/C_h],
+                [0]])
             #Scale by the timestep
             B_mat *= self.dt
             
-            C_mat = np.array([[G_sa/(G_sa + G_ps), G_ps/(G_sa + G_ps)]])
-            V_mat = np.array([[T_random**2,0],
-                                      [0,0]])
+            C_mat = np.array([[G_sa/(G_sa + G_ps), 0, G_ps/(G_sa + G_ps)]])
+            V_mat = np.array([[T_random**2,0,0],
+                                      [0,0,0],
+                                      [0,0,0]])
             W_mat = np.array([[T_noise**2]])
             
             #Note that the first equation has a couple of matrices that have to be 
@@ -307,16 +313,16 @@ class ThermalControl:
                self.temphist[self.index] = tempnow
                self.index = self.index + 1
             
-            #Based on this measurement, what is the next value of x_est?
+            #Based on this measurement, what is the next value of x_i+1 est?
             x_est_new = np.dot(A_mat, self.x_est)
             x_est_new += np.dot(B_mat, self.u)
             dummy = y - np.dot(C_mat, (np.dot(A_mat, self.x_est) + np.dot(B_mat, self.u)))
             x_est_new += np.dot(K_mat, dummy)
-            self.x_est = x_est_new
-            
+            self.x_est = x_est_new #x_i+1 has now become xi
             # Now find u
             if use_lqg:
                 self.u = -np.dot(L_mat, self.x_est)
+                ucalc=self.u[0,0]
                 if self.u[0,0] < 0:
                     self.u[0,0] = 0
                 elif self.u[0,0] > HEATER_MAX:
@@ -331,6 +337,8 @@ class ThermalControl:
                 numFrames = len(aNames)
                 results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
 
+                
+
              #Compute the actual x_i+1
             #x += np.dot(A_mat, x)
             #x += np.dot(B_mat, u)
@@ -342,6 +350,12 @@ class ThermalControl:
                 print("Temperature: {0:9.6f}".format(self.gettemp()))
                 print("Data Index: {0:9.6f}".format(self.index))
                 print("Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
+                print("Heater Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
+                print("Plate Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
+                tempsensor = -1*self.x_est[0,0]*G_sa/(G_sa+G_ps)+self.x_est[2,0]*G_ps/(G_ps+G_sa)
+                print("Estimated sensor Temperature {:9.4f}".format(tempsensor + self.setpoint))
+                print(ucalc)
+
 
 
 
