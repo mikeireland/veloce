@@ -15,8 +15,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.linalg as la
-
-
+from lqg_math import *
 
 LABJACK_IP = "150.203.91.171"
 HEATER_DIOS = ["0"]         #Input/output indices of the heaters
@@ -47,7 +46,7 @@ class ThermalControl:
         self.nreads=int(0)
         self.last_print=-1
         self.index = 0
-        self.temphist = np.empty([self.datapoints])
+        self.temphist = np.zeros(self.datapoints)
         self.lqgverbose = 1
         self.x_est = np.array([[0.],[0.],[0.]])
         self.u = np.array([[0]])
@@ -190,8 +189,21 @@ class ThermalControl:
         if time.time() > self.last_print + 1:
             self.last_print=time.time()
         #    print("Voltage: {0:9.6f}".format(self.voltage))
-       
-        
+      
+        #Get the current temperature and set it to .
+        tempnow = self.gettemp()
+ 
+        #store temperature history for data measurment
+        if self.index == self.datapoints:
+           np.savetxt('data.txt',self.temphist, fmt='%9.6f', delimiter=',')
+           self.storedata = 0
+           self.index = 0 #!!! Matthew, I think this is what you meant and not self.lqg=1?
+
+        if self.storedata == 1:
+           self.temphist[self.index] = tempnow
+           self.index = self.index + 1
+  
+ 
         if self.lqg == 1:
                
             #Define thermal conductivities. Units: Watts/K.
@@ -298,20 +310,9 @@ class ThermalControl:
             #!!! and y.shape
             #import pdb; pdb.set_trace()
             
-            #Get the current temperature and set it to .
-            tempnow = self.gettemp() 
+            #Store the current temperature in y.
             y = np.zeros( (1,1) )
             y[0] = tempnow - self.setpoint
-            
-            #store temperature history for data measurment
-            if self.index == self.datapoints:
-               np.savetxt('data.txt',self.temphist, fmt='%9.6f', delimiter=',')
-               self.storedata = 0
-               self.lqg = 0
-               
-            if self.storedata == 1:
-               self.temphist[self.index] = tempnow
-               self.index = self.index + 1
             
             #Based on this measurement, what is the next value of x_i+1 est?
             x_est_new = np.dot(A_mat, self.x_est)
