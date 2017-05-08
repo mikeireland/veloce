@@ -37,6 +37,7 @@ class ThermalControl:
         self.cmd_initialize("")
         self.voltage=99.9
         self.lqg=0
+        self.use_lqg=True
         self.datapoints=10000
         self.storedata = 0
         self.setpoint = 25.0
@@ -218,7 +219,7 @@ class ThermalControl:
             x_est_new += np.dot(K_mat, dummy)
             self.x_est = x_est_new #x_i+1 has now become xi
             # Now find u
-            if use_lqg:
+            if self.use_lqg:
                 self.u = -np.dot(L_mat, self.x_est)
                 ucalc=self.u[0,0]
                 if self.u[0,0] < 0:
