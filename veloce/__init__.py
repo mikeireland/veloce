@@ -5,3 +5,4 @@ __Version__ = "0.1"
 from server import server_zmq_socket as server
 import thermal_control
 import thermal_control_cmds
+import lqg_math
