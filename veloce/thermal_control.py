@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from lqg_math import *
 
 LABJACK_IP = "150.203.91.171"
-HEATER_DIOS = ["0"]         #Input/output indices of the heaters
+HEATER_DIOS = ["0","2","3"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 AIN_NAME = "AIN0"
 HEATER_MAX = 3.409
@@ -44,9 +44,10 @@ class ThermalControl:
         self.nreads=int(0)
         self.last_print=-1
         self.index = 0
-        self.temphist = np.zeros(self.datapoints)
+        self.ulqg = 0
+        self.temphist = np.zeros( (self.datapoints, 3) )
         self.lqgverbose = 1
-        self.x_est = np.array([[0.],[0.],[0.]])
+        self.x_est = np.array([[0.], [0.], [0.]])
         self.u = np.array([[0]])
 
     #Our user or socket commands
@@ -191,14 +192,16 @@ class ThermalControl:
         #Get the current temperature and set it to .
         tempnow = self.gettemp()
  
-        #store temperature history for data measurment
+        #store temperature and control history for data measurment
         if self.index == self.datapoints:
            np.savetxt('data.txt',self.temphist, fmt='%9.6f', delimiter=',')
            self.storedata = 0
            self.index = 0 #!!! Matthew, I think this is what you meant and not self.lqg=1?
 
         if self.storedata == 1:
-           self.temphist[self.index] = tempnow
+           self.temphist[self.index,0] = tempnow
+           self.temphist[self.index,1] = self.ulqg
+           self.temphist[self.index,2] = self.x_est[0,0]
            self.index = self.index + 1
   
  
@@ -221,17 +224,31 @@ class ThermalControl:
             # Now find u
             if self.use_lqg:
                 self.u = -np.dot(L_mat, self.x_est)
-                ucalc=self.u[0,0]
-                if self.u[0,0] < 0:
+                self.ulqg = self.u[0,0]
+                #offset because heater can't be negative
+                fraction = self.u[0,0]/HEATER_MAX
+
+                if fraction < 0:
                     self.u[0,0] = 0
-                elif self.u[0,0] > HEATER_MAX:
+                    fraction = 0
+                elif fraction > 1:
                     self.u[0,0] = HEATER_MAX
-                #!!!Put in an offset of 0.5, i.e. the heater half
-                #on is at "zero", because it can't go negative.
-                fraction = self.u[0,0]/HEATER_MAX 
+                    fraction = 1
+              
                 
+                #fraction = 0
                 #FIXME: This assumes we are using heater 0.
                 aNames = ["DIO"+HEATER_DIOS[0]+"_EF_CONFIG_A"]
+                aValues = [int(fraction * PWM_MAX)]
+                numFrames = len(aNames)
+                results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+
+                aNames = ["DIO"+HEATER_DIOS[1]+"_EF_CONFIG_A"]
+                aValues = [int(fraction * PWM_MAX)]
+                numFrames = len(aNames)
+                results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+
+                aNames = ["DIO"+HEATER_DIOS[2]+"_EF_CONFIG_A"]
                 aValues = [int(fraction * PWM_MAX)]
                 numFrames = len(aNames)
                 results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
@@ -243,11 +260,11 @@ class ThermalControl:
                 print("Temperature: {0:9.6f}".format(self.gettemp()))
                 print("Data Index: {0:9.6f}".format(self.index))
                 print("Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
-                print("Heater Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
-                print("Plate Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
+                #print("Heater Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
+               # print("Plate Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
                 tempsensor = -1*self.x_est[0,0]*G_sa/(G_sa+G_ps)+self.x_est[2,0]*G_ps/(G_ps+G_sa)
                 print("Estimated sensor Temperature {:9.4f}".format(tempsensor + self.setpoint))
-                print(ucalc)
+                print(self.ulqg)
 
 
 
