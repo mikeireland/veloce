@@ -18,7 +18,7 @@ from lqg_math import *
 LABJACK_IP = "150.203.91.171"
 HEATER_DIOS = ["0","2","3"]         #Input/output indices of the heaters
 PWM_MAX =1000000
-AIN_NAME = "AIN0"
+AIN_NAMES = ["AIN0", "AIN2", "AIN4"]
 HEATER_MAX = 3.409
 
 class ThermalControl:
@@ -35,7 +35,7 @@ class ThermalControl:
         #WARNING: This really should read from the labjack, and set the heater values
         #appropriately
         self.cmd_initialize("")
-        self.voltage=99.9
+        self.voltages=99.9*np.ones(len(AIN_NAMES))
         self.lqg=0
         self.use_lqg=True
         self.datapoints=10000
@@ -135,15 +135,32 @@ class ThermalControl:
     def cmd_getvs(self, the_command):
         """Return the current voltages as a string.
         """
-        return "{0:9.6f}".format(self.voltage)
+        #FIXME: Return an arbitrary number of voltages.
+        return "{0:9.6f} {1:9.6f} {2:9.6f}".format(self.voltages[0], self.voltages[1], self.voltages[2])
 
-    def gettemp(self):
-        """Return the temperature as a float"""
+    def gettemp(self, ix, invert_voltage=True):
+        """Return one temperature as a float. See Roberton's the
+        
+        v_out = v_in * [ R_t/(R_T + R) - R/(R_T + R) ]
+        R_T - R = (R_T + R) * (v_out/v_in)
+        R_T*(1 - (v_out/v_in)) = R * (1 + (v_out/v_in))
+        R_T = R * (v_in + v_out) / (v_in - v_out)
+        
+        Parameters
+        ----------
+        ix: int
+            Index of the sensor to be provided.
+        """
         ##uses converts voltage temperature, resistance implemented
         R = 10000
         Vin = 5
-        resistance = (2*R*self.voltage)/(Vin - self.voltage)
-        resistance += R
+        if invert_voltage:
+            voltage = -self.voltages[ix]
+        else:
+            voltage = self.voltages[ix]
+        resistance = R * (Vin + voltage)/(Vin - voltage)
+        #resistance = (2*R*self.voltage)/(Vin - self.voltage)
+        #resistance += R
         aVal = 0.00113259149597421
         bVal = 0.000233514798680064
         cVal = 0.00000009045521729374
@@ -154,16 +171,19 @@ class ThermalControl:
 
     def cmd_gettemp(self, the_command):
         """Return the temperature to the client as a string"""
-        return "{0:9.6f}".format(self.gettemp())
+        #FIXME: Arbitrary number of voltages needed.
+        return "{0:9.6f} {0:9.6f} {0:9.6f}".format(self.gettemp(0), self.gettemp(1), self.gettemp(2))
 
     def cmd_lqgstart(self, the_command):
         self.lqg = 1
     
     def cmd_lqgsilent(self, the_command):
         self.lqgverbose = 0
+        return ""
     
     def cmd_lqgverbose(self, the_command):
         self.lqgverbose = 1
+        return ""
 
     def cmd_startrec(self, the_command):
         self.storedata = 1
@@ -182,7 +202,9 @@ class ThermalControl:
         
         Just read the voltage, and print once per second 
         (plus the number of reads)"""
-        self.voltage = ljm.eReadName(self.handle, AIN_NAME)
+        for ix, ain_name in enumerate(AIN_NAMES):
+            self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+            time.sleep(1e-4)
         time.sleep(lqg_dt) #!!! MJI should be lqg_math.dt
         self.nreads += 1
         if time.time() > self.last_print + 1:
@@ -190,7 +212,7 @@ class ThermalControl:
         #    print("Voltage: {0:9.6f}".format(self.voltage))
       
         #Get the current temperature and set it to .
-        tempnow = self.gettemp()
+        tempnow = self.gettemp(0)
  
         #store temperature and control history for data measurment
         if self.index == self.datapoints:
@@ -257,8 +279,6 @@ class ThermalControl:
             if self.lqgverbose == 1:
                 print("Heater Wattage: {0:9.6f}".format(self.u[0,0]))
                 print("Heater Fraction: {0:9.6f}".format(fraction))
-                print("Temperature: {0:9.6f}".format(self.gettemp()))
-                print("Data Index: {0:9.6f}".format(self.index))
                 print("Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
                 #print("Heater Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
                # print("Plate Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
@@ -266,8 +286,10 @@ class ThermalControl:
                 print("Estimated sensor Temperature {:9.4f}".format(tempsensor + self.setpoint))
                 print(self.ulqg)
 
-
-
-
+        if self.lqgverbose == 1:
+            print("Data Index: {0:d}".format(self.index))
+            print("Table Temperature: {0:9.6f}".format(self.gettemp(0)))
+            print("Upper Temperature: {0:9.6f}".format(self.gettemp(1)))
+            print("Lower Temperature: {0:9.6f}".format(self.gettemp(2)))
             
         return 
