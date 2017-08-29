@@ -22,6 +22,7 @@ HEATER_DIOS = ["0","2","3"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 AIN_NAMES = ["AIN0", "AIN2", "AIN4"] #Temperature analog input names
 HEATER_MAX = 3.409
+LJ_REST_TIME = 0.01
 
 LOG_FILENAME = 'thermal_control.log'
 #Set the following to logging.INFO on
@@ -214,8 +215,17 @@ class ThermalControl:
         Just read the voltage, and print once per second 
         (plus the number of reads)"""
         for ix, ain_name in enumerate(AIN_NAMES):
-            self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
-            time.sleep(2e-3)
+            try:
+                self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+            except:
+                print("Could not read temperature {:d} one time".format(ix))
+                logging.warning("Could not read temperature {:d} one time".format(ix))
+                #Now try again
+                try:
+                    self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+                except:
+                    print("Giving up reading temperature {:d}".format(ix))
+                    logging.error("Giving up reading temperature {:d}".format(ix))
         time.sleep(lqg_dt) #!!! MJI should be lqg_math.dt
         self.nreads += 1
         if time.time() > self.last_print + 1:
