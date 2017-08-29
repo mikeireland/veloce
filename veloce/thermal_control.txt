@@ -9,5 +9,4 @@ lqgsilent
 lqgverbose
 startrec
 stoprec
-writedata
 lqgstop

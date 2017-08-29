@@ -5,7 +5,8 @@ accepts text or ZMQ-based input, and runs the servo loop as a background task.
 Version history
 ---------------
 0.1     19 Jan 2017     MJI     Skeleton only
-
+0.2     July 2017       MR/MJI  Functioning with test plate
+0.3     29 Aug 2017     MJI     Tidy-up, especially
 """
 from __future__ import print_function, division
 import numpy as np
@@ -14,12 +15,19 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from lqg_math import *
+import logging
 
 LABJACK_IP = "150.203.91.171"
 HEATER_DIOS = ["0","2","3"]         #Input/output indices of the heaters
 PWM_MAX =1000000
-AIN_NAMES = ["AIN0", "AIN2", "AIN4"]
+AIN_NAMES = ["AIN0", "AIN2", "AIN4"] #Temperature analog input names
 HEATER_MAX = 3.409
+
+LOG_FILENAME = 'thermal_control.log'
+#Set the following to logging.INFO on
+logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG, \
+    format='%(asctime)s, %(created)f, %(levelname)s,  %(message)s', \
+    datefmt='%Y-%m-%d %H:%M:%S')
 
 class ThermalControl:
     def __init__(self, ip=None):
@@ -38,15 +46,12 @@ class ThermalControl:
         self.voltages=99.9*np.ones(len(AIN_NAMES))
         self.lqg=0
         self.use_lqg=True
-        self.datapoints=10000
-        self.storedata = 0
+        self.storedata = False
         self.setpoint = 25.0
         self.nreads=int(0)
         self.last_print=-1
-        self.index = 0
         self.ulqg = 0
-        self.temphist = np.zeros( (self.datapoints, 3) )
-        self.lqgverbose = 1
+        self.lqgverbose = False
         self.x_est = np.array([[0.], [0.], [0.]])
         self.u = np.array([[0]])
 
@@ -168,31 +173,37 @@ class ThermalControl:
         tempKelv = 1/(temp_inv)
         tempCelc = tempKelv -273.15
         return tempCelc
+        
+    def gettemps(self):
+        """Get all temperatures and return as a list"""
+        temps = ()
+        for ix in range(len(AIN_NAMES)):
+            temps += (self.gettemp(ix),)
+        return temps
 
     def cmd_gettemp(self, the_command):
         """Return the temperature to the client as a string"""
-        #FIXME: Arbitrary number of voltages needed.
-        return "{0:9.6f} {0:9.6f} {0:9.6f}".format(self.gettemp(0), self.gettemp(1), self.gettemp(2))
+        temps = self.gettemps()
+        return (', {:9.6f}'*len(AIN_NAMES)).format(*temps)[2:]
+        #return "{0:9.6f}, {0:9.6f} {0:9.6f}".format(self.gettemp(0), self.gettemp(1), self.gettemp(2))
 
     def cmd_lqgstart(self, the_command):
         self.lqg = 1
     
     def cmd_lqgsilent(self, the_command):
-        self.lqgverbose = 0
+        self.lqgverbose = False
         return ""
     
     def cmd_lqgverbose(self, the_command):
-        self.lqgverbose = 1
+        self.lqgverbose = True
         return ""
 
     def cmd_startrec(self, the_command):
-        self.storedata = 1
+        self.storedata = True
+        return ""
 
     def cmd_stoprec(self, the_command):
-        self.storedata = 0
-
-    def cmd_writedata(self, the_command):
-        np.savetxt('data.txt',self.temphist, fmt='%9.6f', delimiter=',')          
+        self.storedata = False
 
     def cmd_lqgstop(self, the_command):
         self.lqg = 0 
@@ -204,7 +215,7 @@ class ThermalControl:
         (plus the number of reads)"""
         for ix, ain_name in enumerate(AIN_NAMES):
             self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
-            time.sleep(1e-4)
+            time.sleep(2e-3)
         time.sleep(lqg_dt) #!!! MJI should be lqg_math.dt
         self.nreads += 1
         if time.time() > self.last_print + 1:
@@ -213,20 +224,7 @@ class ThermalControl:
       
         #Get the current temperature and set it to .
         tempnow = self.gettemp(0)
- 
-        #store temperature and control history for data measurment
-        if self.index == self.datapoints:
-           np.savetxt('data.txt',self.temphist, fmt='%9.6f', delimiter=',')
-           self.storedata = 0
-           self.index = 0 #!!! Matthew, I think this is what you meant and not self.lqg=1?
-
-        if self.storedata == 1:
-           self.temphist[self.index,0] = tempnow
-           self.temphist[self.index,1] = self.ulqg
-           self.temphist[self.index,2] = self.x_est[0,0]
-           self.index = self.index + 1
   
- 
         if self.lqg == 1:
             #!!! MATTHEW - this next line is great for debugging !!!
             #!!! Uncomment it to look at variables, e.g. print(y)
@@ -287,9 +285,13 @@ class ThermalControl:
                 print(self.ulqg)
 
         if self.lqgverbose == 1:
-            print("Data Index: {0:d}".format(self.index))
+            print("---")
             print("Table Temperature: {0:9.6f}".format(self.gettemp(0)))
             print("Upper Temperature: {0:9.6f}".format(self.gettemp(1)))
             print("Lower Temperature: {0:9.6f}".format(self.gettemp(2)))
+            
+        if self.storedata:
+            logging.info('TEMPS, ' + self.cmd_gettemp(""))
+            #logging.info('TEMPS' + ', {:9.6f}'*len(AIN_NAMES).format())
             
         return 
