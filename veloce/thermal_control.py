@@ -18,11 +18,16 @@ from lqg_math import *
 import logging
 
 LABJACK_IP = "150.203.91.171"
-HEATER_DIOS = ["0","2","3"]         #Input/output indices of the heaters
+#long sides, short sides, lid and base for FIO 0,2,3,4 respectively.
+#30, 30, 20 and 20 ohms.
+HEATER_DIOS = ["0","2","3","4","5"]         #Input/output indices of the heaters
 PWM_MAX =1000000
+#Table, lower then upper.
 AIN_NAMES = ["AIN0", "AIN2", "AIN4"] #Temperature analog input names
 HEATER_MAX = 3.409
 LJ_REST_TIME = 0.01
+TEMP_DERIV = 0.00035 #K/s with heater on full.
+PID_GAIN_HZ = 0.002
 
 LOG_FILENAME = 'thermal_control.log'
 #Set the following to logging.INFO on
@@ -45,7 +50,7 @@ class ThermalControl:
         #appropriately
         self.cmd_initialize("")
         self.voltages=99.9*np.ones(len(AIN_NAMES))
-        self.lqg=0
+        self.lqg=False
         self.use_lqg=True
         self.storedata = False
         self.setpoint = 25.0
@@ -55,6 +60,12 @@ class ThermalControl:
         self.lqgverbose = False
         self.x_est = np.array([[0.], [0.], [0.]])
         self.u = np.array([[0]])
+        #PID Constants
+        self.pid=False
+        self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
+        self.pid_i = 0.5*PID_GAIN_HZ**2/TEMP_DERIV
+        self.pid_ints = np.array([0,0])
+        
 
     #Our user or socket commands
     def cmd_initialize(self, the_command):
@@ -189,7 +200,7 @@ class ThermalControl:
         #return "{0:9.6f}, {0:9.6f} {0:9.6f}".format(self.gettemp(0), self.gettemp(1), self.gettemp(2))
 
     def cmd_lqgstart(self, the_command):
-        self.lqg = 1
+        self.lqg = True
     
     def cmd_lqgsilent(self, the_command):
         self.lqgverbose = False
@@ -207,13 +218,26 @@ class ThermalControl:
         self.storedata = False
 
     def cmd_lqgstop(self, the_command):
-        self.lqg = 0 
+        self.lqg = False 
+
+    def cmd_pidstart(self, the_command):
+        self.pid = True
+
+    def cmd_pidstop(self, the_command):
+        self.pid = False
+
+    def set_heater(self, ix, fraction):
+        aNames = ["DIO"+HEATER_DIOS[ix]+"_EF_CONFIG_A"]
+        aValues = [int(fraction * PWM_MAX)]
+        numFrames = len(aNames)
+        results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
 
     def job_doservo(self):
         """Dummy servo loop job
         
         Just read the voltage, and print once per second 
         (plus the number of reads)"""
+        time.sleep(lqg_dt) #!!! MJI should be lqg_math.dt
         for ix, ain_name in enumerate(AIN_NAMES):
             try:
                 self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
@@ -226,7 +250,6 @@ class ThermalControl:
                 except:
                     print("Giving up reading temperature {:d}".format(ix))
                     logging.error("Giving up reading temperature {:d}".format(ix))
-        time.sleep(lqg_dt) #!!! MJI should be lqg_math.dt
         self.nreads += 1
         if time.time() > self.last_print + 1:
             self.last_print=time.time()
@@ -235,7 +258,7 @@ class ThermalControl:
         #Get the current temperature and set it to .
         tempnow = self.gettemp(0)
   
-        if self.lqg == 1:
+        if self.lqg:
             #!!! MATTHEW - this next line is great for debugging !!!
             #!!! Uncomment it to look at variables, e.g. print(y)
             #!!! and y.shape
@@ -273,16 +296,6 @@ class ThermalControl:
                 numFrames = len(aNames)
                 results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
 
-                aNames = ["DIO"+HEATER_DIOS[1]+"_EF_CONFIG_A"]
-                aValues = [int(fraction * PWM_MAX)]
-                numFrames = len(aNames)
-                results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
-
-                aNames = ["DIO"+HEATER_DIOS[2]+"_EF_CONFIG_A"]
-                aValues = [int(fraction * PWM_MAX)]
-                numFrames = len(aNames)
-                results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
-
             #!!!Another error here, u was an array, so numpy prints it as a string
             if self.lqgverbose == 1:
                 print("Heater Wattage: {0:9.6f}".format(self.u[0,0]))
@@ -293,12 +306,38 @@ class ThermalControl:
                 tempsensor = -1*self.x_est[0,0]*G_sa/(G_sa+G_ps)+self.x_est[2,0]*G_ps/(G_ps+G_sa)
                 print("Estimated sensor Temperature {:9.4f}".format(tempsensor + self.setpoint))
                 print(self.ulqg)
+        elif self.pid:
+            #Start the PID loop. For the integral component, reset whenever the heater 
+            #hits the rail.
+            t0 = self.gettemp(1)
+            self.pid_ints[0] += lqg_dt*t0
+            h0 = 0.5 + self.pid_gain*(self.setpoint - t0) + self.pid_i*self.pid_ints[0]
+            if (h0<0):
+                h0=0
+                self.pid_ints[0]=0
+            if (h0>1):
+                h0=1
+                self.pid_ints[0]=0
+            t1 = self.gettemp(2)
+            self.pid_ints[0] += lqg_dt*t1
+            h1 = 0.5 + self.pid_gain*(self.setpoint - t1) + self.pid_i*self.pid_ints[1]
+            if (h1<0):
+                h1=0
+                self.pid_ints[1]=0
+            if (h1>1):
+                h1=1
+                self.pid_ints[1]=0
+            #Now control the heaters...
+            self.set_heater(0, h1)
+            self.set_heater(1, h1)
+            self.set_heater(2, h1)
+            self.set_heater(3, h0)
 
         if self.lqgverbose == 1:
             print("---")
             print("Table Temperature: {0:9.6f}".format(self.gettemp(0)))
-            print("Upper Temperature: {0:9.6f}".format(self.gettemp(1)))
-            print("Lower Temperature: {0:9.6f}".format(self.gettemp(2)))
+            print("Lower Temperature: {0:9.6f}".format(self.gettemp(1)))
+            print("Upper Temperature: {0:9.6f}".format(self.gettemp(2)))
             
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))
