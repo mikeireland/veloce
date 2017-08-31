@@ -6,7 +6,7 @@ Version history
 ---------------
 0.1     19 Jan 2017     MJI     Skeleton only
 0.2     July 2017       MR/MJI  Functioning with test plate
-0.3     29 Aug 2017     MJI     Tidy-up, especially
+0.3     29 Aug 2017     MJI     Tidy-up, especially logging
 """
 from __future__ import print_function, division
 import numpy as np
