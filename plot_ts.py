@@ -18,7 +18,7 @@ def remove_poly(tm_datetime, tm, temps, start=None, stop=None, deg=2):
     resid = temps_use - pfunc(tm_use-tm_use[0])
     return resid, tm_datetime_use, pfit
 
-def plot_all(logfile):
+def plot_all(logfile, line='-'):
     rr = csv.reader(open(logfile,'r'))
     tm = []
     t1 = []
@@ -37,9 +37,11 @@ def plot_all(logfile):
     tm_datetime = np.array([datetime.datetime.fromtimestamp(t) for t in tm])
 
     plt.clf()
-    plt.plot_date(tm_datetime, t1, '.', label='Table')
-    plt.plot_date(tm_datetime, t2, '.', label='Lower')
-    plt.plot_date(tm_datetime, t3, '.', label='Upper')
+    plt.plot_date(tm_datetime, t1, line, label='Table')
+    plt.plot_date(tm_datetime, t2, line, label='Lower')
+    plt.plot_date(tm_datetime, t3, line, label='Upper')
+    plt.ylabel("Temperature (C)")
+    plt.xlabel("Date and time")
     plt.legend()
     return tm_datetime, tm, t1, t2, t3
 
