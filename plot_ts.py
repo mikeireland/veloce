@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import csv
 import datetime
+from matplotlib.dates import DateFormatter
 plt.ion()
 
 def remove_poly(tm_datetime, tm, temps, start=None, stop=None, deg=2):
@@ -36,10 +37,12 @@ def plot_all(logfile, line='-'):
     t3 = np.array(t3)
     tm_datetime = np.array([datetime.datetime.fromtimestamp(t) for t in tm])
 
+    #ax=plt.subplot()
     plt.clf()
     plt.plot_date(tm_datetime, t1, line, label='Table')
     plt.plot_date(tm_datetime, t2, line, label='Lower')
     plt.plot_date(tm_datetime, t3, line, label='Upper')
+    #ax.xaxis.set_major_formatter( DateFormatter('%H:%M') )
     plt.ylabel("Temperature (C)")
     plt.xlabel("Date and time")
     plt.legend()
