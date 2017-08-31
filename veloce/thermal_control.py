@@ -28,6 +28,7 @@ HEATER_MAX = 3.409
 LJ_REST_TIME = 0.01
 TEMP_DERIV = 0.00035 #K/s with heater on full.
 PID_GAIN_HZ = 0.002
+UPPER_OFFSET = 0.3
 
 LOG_FILENAME = 'thermal_control.log'
 #Set the following to logging.INFO on
@@ -64,7 +65,7 @@ class ThermalControl:
         self.pid=False
         self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
         self.pid_i = 0.5*PID_GAIN_HZ**2/TEMP_DERIV
-        self.pid_ints = np.array([0,0])
+        self.pid_ints = np.array([0.,0.])
         
 
     #Our user or socket commands
@@ -84,8 +85,8 @@ class ThermalControl:
         self.current_heaters = np.zeros(len(HEATER_DIOS))
         aNames = ["DIO_EF_CLOCK0_DIVISOR", "DIO_EF_CLOCK0_ROLL_VALUE", "DIO_EF_CLOCK0_ENABLE"]
         #Set the first number below to 256 for testing on a multimeter.
-        #Set to 8 for normal operation
-        aValues = [8, PWM_MAX, 1]
+        #Set to 16 for normal operation (5Hz)
+        aValues = [16, PWM_MAX, 1]
         for dio in HEATER_DIOS:
             aNames.extend(["DIO"+dio+"_EF_INDEX", "DIO"+dio+"_EF_CONFIG_A", "DIO"+dio+"_EF_ENABLE"])
             aValues.extend([0,0,1])
@@ -142,13 +143,24 @@ class ThermalControl:
         return "Done."
         
     def cmd_setgain(self, the_command):
-        """Dummy gain setting function"""
+        """Set the PID gain"""
         the_command = the_command.split()
         if len(the_command)!=2:
             return "Useage: SETGAIN [newgain]"
         else:
-            return "Gain not set to {}".format(the_command[1:])
+            self.pid_gain = float(the_command[1])
+            return "Gain set to {:6.5f}".format(self.pid_gain)
+
+    def cmd_seti(self, the_command):
+        """Set the PID integral term"""
+        the_command = the_command.split()
+        if len(the_command)!=2:
+            return "Useage: SETI [newi]"
+        else:
+            self.pid_i = float(the_command[1])
+            return "PID I term set to {:6.5f}".format(self.pid_i)
             
+          
     def cmd_getvs(self, the_command):
         """Return the current voltages as a string.
         """
@@ -232,6 +244,15 @@ class ThermalControl:
         numFrames = len(aNames)
         results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
 
+    def cmd_setpoint(self, the_command):
+        """Set the temperature setpoint"""
+        the_command = the_command.split()
+        if len(the_command)!=2:
+            return "Useage: SETPOINT [new setpoint]"
+        else:
+            self.setpoint = float(the_command[1])
+            return "Temperature setpoing set to {:6.5f}".format(self.setpoint)
+
     def job_doservo(self):
         """Dummy servo loop job
         
@@ -310,7 +331,7 @@ class ThermalControl:
             #Start the PID loop. For the integral component, reset whenever the heater 
             #hits the rail.
             t0 = self.gettemp(1)
-            self.pid_ints[0] += lqg_dt*t0
+            self.pid_ints[0] += lqg_dt*(self.setpoint - t0)
             h0 = 0.5 + self.pid_gain*(self.setpoint - t0) + self.pid_i*self.pid_ints[0]
             if (h0<0):
                 h0=0
@@ -319,7 +340,7 @@ class ThermalControl:
                 h0=1
                 self.pid_ints[0]=0
             t1 = self.gettemp(2)
-            self.pid_ints[0] += lqg_dt*t1
+            self.pid_ints[1] += lqg_dt*(self.setpoint - t1)
             h1 = 0.5 + self.pid_gain*(self.setpoint - t1) + self.pid_i*self.pid_ints[1]
             if (h1<0):
                 h1=0
@@ -328,12 +349,14 @@ class ThermalControl:
                 h1=1
                 self.pid_ints[1]=0
             #Now control the heaters...
+            #As the lid has significantly less loss to ambient, use less power.
             self.set_heater(0, h1)
             self.set_heater(1, h1)
-            self.set_heater(2, h1)
+            self.set_heater(2, 0.7*h1)
             self.set_heater(3, h0)
+            logging.debug('HEATPID, {0:5.3f}, {1:5.3f}, {2:5.3f}, {3:5.3f}'.format(h0,h1,self.pid_ints[0],self.pid_ints[1]))
 
-        if self.lqgverbose == 1:
+        if self.lqgverbose:
             print("---")
             print("Table Temperature: {0:9.6f}".format(self.gettemp(0)))
             print("Lower Temperature: {0:9.6f}".format(self.gettemp(1)))

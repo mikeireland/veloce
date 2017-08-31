@@ -2,6 +2,7 @@ initialize
 close
 heater
 setgain
+seti
 getvs
 gettemp
 lqgstart
@@ -10,3 +11,6 @@ lqgverbose
 startrec
 stoprec
 lqgstop
+pidstart
+pidstop
+setpoint

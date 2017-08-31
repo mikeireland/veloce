@@ -32,7 +32,7 @@ class CommandList():
     
         This returns a string containing the response, or a -1 if a quit is commanded.'''
         m = self.module_with_functions
-        the_functions = dict(initialize=m.cmd_initialize,close=m.cmd_close,heater=m.cmd_heater,setgain=m.cmd_setgain,getvs=m.cmd_getvs,gettemp=m.cmd_gettemp,lqgstart=m.cmd_lqgstart,lqgsilent=m.cmd_lqgsilent,lqgverbose=m.cmd_lqgverbose,startrec=m.cmd_startrec,stoprec=m.cmd_stoprec,lqgstop=m.cmd_lqgstop)
+        the_functions = dict(initialize=m.cmd_initialize,close=m.cmd_close,heater=m.cmd_heater,setgain=m.cmd_setgain,seti=m.cmd_seti,getvs=m.cmd_getvs,gettemp=m.cmd_gettemp,lqgstart=m.cmd_lqgstart,lqgsilent=m.cmd_lqgsilent,lqgverbose=m.cmd_lqgverbose,startrec=m.cmd_startrec,stoprec=m.cmd_stoprec,lqgstop=m.cmd_lqgstop,pidstart=m.cmd_pidstart,pidstop=m.cmd_pidstop,setpoint=m.cmd_setpoint)
         commands = the_command.split()
         #Make sure we ignore case.
         commands[0] = commands[0].lower()
@@ -40,7 +40,7 @@ class CommandList():
             return ""
         if commands[0] == "help":
             if (len(commands) == 1):
-                return '** Available Commands **\nexit\ninitialize\nclose\nheater\nsetgain\ngetvs\ngettemp\nlqgstart\nlqgsilent\nlqgverbose\nstartrec\nstoprec\nlqgstop\n'
+                return '** Available Commands **\nexit\ninitialize\nclose\nheater\nsetgain\nseti\ngetvs\ngettemp\nlqgstart\nlqgsilent\nlqgverbose\nstartrec\nstoprec\nlqgstop\npidstart\npidstop\nsetpoint\n'
             elif commands[1] in the_functions:
                 td=pydoc.TextDoc()
                 return td.docroutine(the_functions[commands[1]])
