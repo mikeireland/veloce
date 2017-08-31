@@ -18,20 +18,21 @@ from lqg_math import *
 import logging
 
 LABJACK_IP = "150.203.91.171"
-#long sides, short sides, lid and base for FIO 0,2,3,4 respectively.
-#30, 30, 20 and 20 ohms.
+#Long sides, short sides, lid and base for FIO 0,2,3,4 respectively.
+#NB: Heaters checked at 30, 30, 20 and 20 ohms.
+HEATER_LABELS = ["Long", "Short", "Lid", "Base", "Cryostat"]
 HEATER_DIOS = ["0","2","3","4","5"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 #Table, lower then upper.
+AIN_LABELS = ["Table", "Lower", "Upper"]
 AIN_NAMES = ["AIN0", "AIN2", "AIN4"] #Temperature analog input names
+T_OFFSETS = [0., 0., 0.4]
 HEATER_MAX = 3.409
 LJ_REST_TIME = 0.01
 TEMP_DERIV = 0.00035 #K/s with heater on full.
 PID_GAIN_HZ = 0.002
-UPPER_OFFSET = 0.3
-
 LOG_FILENAME = 'thermal_control.log'
-#Set the following to logging.INFO on
+#Set the following to logging.INFO on or logging.DEBUG on
 logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG, \
     format='%(asctime)s, %(created)f, %(levelname)s,  %(message)s', \
     datefmt='%Y-%m-%d %H:%M:%S')
@@ -107,6 +108,7 @@ class ThermalControl:
         """Close the connection to the labjack"""
         ljm.close(self.handle)
         self.labjack_open=True
+        return "Labjack connection closed."
         
     def cmd_heater(self, the_command):
         """Set a single heater to a single PWM output"""
@@ -167,44 +169,6 @@ class ThermalControl:
         #FIXME: Return an arbitrary number of voltages.
         return "{0:9.6f} {1:9.6f} {2:9.6f}".format(self.voltages[0], self.voltages[1], self.voltages[2])
 
-    def gettemp(self, ix, invert_voltage=True):
-        """Return one temperature as a float. See Roberton's the
-        
-        v_out = v_in * [ R_t/(R_T + R) - R/(R_T + R) ]
-        R_T - R = (R_T + R) * (v_out/v_in)
-        R_T*(1 - (v_out/v_in)) = R * (1 + (v_out/v_in))
-        R_T = R * (v_in + v_out) / (v_in - v_out)
-        
-        Parameters
-        ----------
-        ix: int
-            Index of the sensor to be provided.
-        """
-        ##uses converts voltage temperature, resistance implemented
-        R = 10000
-        Vin = 5
-        if invert_voltage:
-            voltage = -self.voltages[ix]
-        else:
-            voltage = self.voltages[ix]
-        resistance = R * (Vin + voltage)/(Vin - voltage)
-        #resistance = (2*R*self.voltage)/(Vin - self.voltage)
-        #resistance += R
-        aVal = 0.00113259149597421
-        bVal = 0.000233514798680064
-        cVal = 0.00000009045521729374
-        temp_inv = aVal + bVal*np.log(resistance) + cVal*((np.log(resistance))**3)
-        tempKelv = 1/(temp_inv)
-        tempCelc = tempKelv -273.15
-        return tempCelc
-        
-    def gettemps(self):
-        """Get all temperatures and return as a list"""
-        temps = ()
-        for ix in range(len(AIN_NAMES)):
-            temps += (self.gettemp(ix),)
-        return temps
-
     def cmd_gettemp(self, the_command):
         """Return the temperature to the client as a string"""
         temps = self.gettemps()
@@ -228,21 +192,19 @@ class ThermalControl:
 
     def cmd_stoprec(self, the_command):
         self.storedata = False
+        return ""
 
     def cmd_lqgstop(self, the_command):
         self.lqg = False 
+        return ""
 
     def cmd_pidstart(self, the_command):
         self.pid = True
+        return ""
 
     def cmd_pidstop(self, the_command):
         self.pid = False
-
-    def set_heater(self, ix, fraction):
-        aNames = ["DIO"+HEATER_DIOS[ix]+"_EF_CONFIG_A"]
-        aValues = [int(fraction * PWM_MAX)]
-        numFrames = len(aNames)
-        results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+        return ""
 
     def cmd_setpoint(self, the_command):
         """Set the temperature setpoint"""
@@ -253,8 +215,73 @@ class ThermalControl:
             self.setpoint = float(the_command[1])
             return "Temperature setpoing set to {:6.5f}".format(self.setpoint)
 
+    def set_heater(self, ix, fraction):
+        """Set the heater to a fraction of its full range.
+        
+        Parameters
+        ----------
+        ix: int
+            The heater to set.
+        
+        fraction: float
+            The fractional heater current (via PWM).
+        """
+        aNames = ["DIO"+HEATER_DIOS[ix]+"_EF_CONFIG_A"]
+        aValues = [int(fraction * PWM_MAX)]
+        numFrames = len(aNames)
+        results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+
+    def gettemp(self, ix, invert_voltage=True):
+        """Return one temperature as a float. See Roberton's the
+        
+        v_out = v_in * [ R_t/(R_T + R) - R/(R_T + R) ]
+        R_T - R = (R_T + R) * (v_out/v_in)
+        R_T*(1 - (v_out/v_in)) = R * (1 + (v_out/v_in))
+        R_T = R * (v_in + v_out) / (v_in - v_out)
+        
+        Parameters
+        ----------
+        ix: int
+            Index of the sensor to be provided.
+            
+        Returns
+        -------
+        temp: float
+            Temperature in Celcius
+        """
+        ##uses converts voltage temperature, resistance implemented
+        R = 10000
+        Vin = 5
+        if invert_voltage:
+            voltage = -self.voltages[ix]
+        else:
+            voltage = self.voltages[ix]
+        resistance = R * (Vin + voltage)/(Vin - voltage)
+        #resistance = (2*R*self.voltage)/(Vin - self.voltage)
+        #resistance += R
+        aVal = 0.00113259149597421
+        bVal = 0.000233514798680064
+        cVal = 0.00000009045521729374
+        temp_inv = aVal + bVal*np.log(resistance) + cVal*((np.log(resistance))**3)
+        tempKelv = 1/(temp_inv)
+        tempCelc = tempKelv -273.15
+        return tempCelc - T_OFFSETS[ix]
+        
+    def gettemps(self):
+        """Get all temperatures.
+        
+        Returns
+        -------
+        temps: list
+            A list of temperatures for all sensors.
+        """
+        temps = ()
+        for ix in range(len(AIN_NAMES)):
+            temps += (self.gettemp(ix),)
+        return temps
+
     def job_doservo(self):
-        """Dummy servo loop job
+        """Servo loop job
         
         Just read the voltage, and print once per second 
         (plus the number of reads)"""
