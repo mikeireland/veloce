@@ -53,7 +53,7 @@ class ThermalControl:
         self.lqg=False
         self.use_lqg=True
         self.storedata = False
-        self.setpoint = 25.0
+        self.setpoint = 23.0
         self.nreads=int(0)
         self.last_print=-1
         self.ulqg = 0
