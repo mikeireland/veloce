@@ -3,6 +3,8 @@ close
 heater
 setgain
 seti
+setnestgain
+setnesti
 getvs
 gettemp
 lqgstart

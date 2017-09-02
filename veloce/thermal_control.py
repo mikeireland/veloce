@@ -26,7 +26,8 @@ PWM_MAX =1000000
 #Table, lower then upper.
 AIN_LABELS = ["Table", "Lower", "Upper"]
 AIN_NAMES = ["AIN0", "AIN2", "AIN4"] #Temperature analog input names
-T_OFFSETS = [0., 0., 0.4]
+#T_OFFSETS = [0., 0., 0.4] #Testing on 1/2 Sep
+T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
 HEATER_MAX = 3.409
 LJ_REST_TIME = 0.01
 
@@ -40,7 +41,7 @@ PID_GAIN_HZ = 0.002
 #In the nested servo loop, we set the outer enclosure setpoint according to
 #the difference between the table and its setpoint. The 
 NESTED_GAIN = 10.0
-NESTED_TIME_CONST = 10000.0
+NESTED_TIME_CONST = 36000.0 #About 10 hours.
 
 LOG_FILENAME = 'thermal_control.log'
 #Set the following to logging.INFO on or logging.DEBUG on
@@ -66,7 +67,8 @@ class ThermalControl:
         self.lqg=False
         self.use_lqg=True
         self.storedata = False
-        self.setpoint = 23.0
+        self.setpoint = 25.0
+        self.enc_setpoint = self.setpoint #Just a starting value
         self.last_print=-1
         self.ulqg = 0
         self.lqgverbose = False
@@ -175,7 +177,24 @@ class ThermalControl:
         else:
             self.pid_i = float(the_command[1])
             return "PID I term set to {:6.5f}".format(self.pid_i)
-            
+
+    def cmd_setnestgain(self, the_command):
+        """Set the PID nested gain"""
+        the_command = the_command.split()
+        if len(the_command)!=2:
+            return "Useage: SETNESTGAIN [newgain]"
+        else:
+            self.pid_gain = float(the_command[1])
+            return "Nested servo gain set to {:6.5f}".format(self.nested_gain)
+
+    def cmd_setnesti(self, the_command):
+        """Set the PID nested integral term"""
+        the_command = the_command.split()
+        if len(the_command)!=2:
+            return "Useage: SETNESTI [newi]"
+        else:
+            self.nested_i = float(the_command[1])
+            return "PID I term set to {:6.5f}".format(self.nested_i)      
           
     def cmd_getvs(self, the_command):
         """Return the current voltages as a string.
@@ -368,26 +387,38 @@ class ThermalControl:
                 print("Estimated sensor Temperature {:9.4f}".format(tempsensor + self.setpoint))
                 print(self.ulqg)
         elif self.pid:
-            #Start the PID loop. For the integral component, reset whenever the heater 
-            #hits the rail.
+            #Set the Enclosure set point according to the table temperature
+            t_tab = self.gettemp(0)
+            self.nested_int += lqg_dt*(self.setpoint - t_tab)
+            self.enc_setpoint = self.setpoint + self.nested_gain*(self.setpoint - t_tab)\
+                self.nested_i*self.nested_int
+            logging.debug('ENCPID, {0:5.3f}, {1:5.3f}'.format(self.enc_setpoint, self.nested_int))
+
+            #Start the Enclosue PID loop. For the integral component, reset 
+            #all integral terms whenever the heater hits the rail.
             t0 = self.gettemp(1)
-            self.pid_ints[0] += lqg_dt*(self.setpoint - t0)
-            h0 = 0.5 + self.pid_gain*(self.setpoint - t0) + self.pid_i*self.pid_ints[0]
+            self.pid_ints[0] += lqg_dt*(self.enc_setpoint - t0)
+            h0 = 0.5 + self.pid_gain*(self.enc_setpoint - t0) + self.pid_i*self.pid_ints[0]
             if (h0<0):
                 h0=0
                 self.pid_ints[0]=0
+                self.nested_i=0
             if (h0>1):
                 h0=1
                 self.pid_ints[0]=0
+                self.nested_i=0
             t1 = self.gettemp(2)
-            self.pid_ints[1] += lqg_dt*(self.setpoint - t1)
-            h1 = 0.5 + self.pid_gain*(self.setpoint - t1) + self.pid_i*self.pid_ints[1]
+            self.pid_ints[1] += lqg_dt*(self.enc_setpoint - t1)
+            h1 = 0.5 + self.pid_gain*(self.enc_setpoint - t1) + self.pid_i*self.pid_ints[1]
             if (h1<0):
                 h1=0
                 self.pid_ints[1]=0
+                self.nested_i=0
             if (h1>1):
                 h1=1
                 self.pid_ints[1]=0
+                self.nested_i=0
+                
             #Now control the heaters...
             #As the lid has significantly less loss to ambient, use less power.
             self.set_heater(0, h1)
