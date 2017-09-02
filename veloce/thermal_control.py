@@ -67,7 +67,6 @@ class ThermalControl:
         self.use_lqg=True
         self.storedata = False
         self.setpoint = 23.0
-        self.nreads=int(0)
         self.last_print=-1
         self.ulqg = 0
         self.lqgverbose = False
@@ -313,7 +312,6 @@ class ThermalControl:
                 except:
                     print("Giving up reading temperature {:d}".format(ix))
                     logging.error("Giving up reading temperature {:d}".format(ix))
-        self.nreads += 1
         if time.time() > self.last_print + 1:
             self.last_print=time.time()
         #    print("Voltage: {0:9.6f}".format(self.voltage))
