@@ -29,8 +29,19 @@ AIN_NAMES = ["AIN0", "AIN2", "AIN4"] #Temperature analog input names
 T_OFFSETS = [0., 0., 0.4]
 HEATER_MAX = 3.409
 LJ_REST_TIME = 0.01
-TEMP_DERIV = 0.00035 #K/s with heater on full.
+
+#Derivative of the temperature in K/s with the heater on full.
+TEMP_DERIV = 0.00035 
+#This should be set to 1./ENCLOSURE_TIME_CONSTANT. There are multiple time
+#constants - this is the shortest one, i.e. the time in between turning the
+#heater on or off and having a linear temperature ramp.
 PID_GAIN_HZ = 0.002
+
+#In the nested servo loop, we set the outer enclosure setpoint according to
+#the difference between the table and its setpoint. The 
+NESTED_GAIN = 10.0
+NESTED_TIME_CONST = 10000.0
+
 LOG_FILENAME = 'thermal_control.log'
 #Set the following to logging.INFO on or logging.DEBUG on
 logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG, \
@@ -67,6 +78,10 @@ class ThermalControl:
         self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
         self.pid_i = 0.5*PID_GAIN_HZ**2/TEMP_DERIV
         self.pid_ints = np.array([0.,0.])
+        #Constants for the nested servo loop. See constants above.
+        self.nested_gain = NESTED_GAIN
+        self.nested_i = 1.0/NESTED_TIME_CONST
+        self.nested_int = 0.
         
 
     #Our user or socket commands
