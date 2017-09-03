@@ -42,6 +42,7 @@ PID_GAIN_HZ = 0.002
 #the difference between the table and its setpoint. The 
 NESTED_GAIN = 10.0
 NESTED_TIME_CONST = 36000.0 #About 10 hours.
+TABLE_DEADZONE = 0.1
 
 LOG_FILENAME = 'thermal_control.log'
 #Set the following to logging.INFO on or logging.DEBUG on
@@ -389,6 +390,12 @@ class ThermalControl:
         elif self.pid:
             #Set the Enclosure set point according to the table temperature
             t_tab = self.gettemp(0)
+            #Ignore table temperatures more than TABLE_DEADZONE from the setpoint.
+            #This is a hack for limiting the affect of a limited heater current.
+            if t_tab > self.setpoint + TABLE_DEADZONE:
+                t_tab = self.setpoint + TABLE_DEADZONE
+            if t_tab < self.setpoint - TABLE_DEADZONE:
+                t_tab = self.setpoint - TABLE_DEADZONE
             self.nested_int += lqg_dt*(self.setpoint - t_tab)
             self.enc_setpoint = self.setpoint + self.nested_gain*(self.setpoint - t_tab) \
                 + self.nested_i*self.nested_int
