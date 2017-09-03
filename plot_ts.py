@@ -138,7 +138,7 @@ if __name__=="__main__":
         plt.plot_date(tm_datetime_use, resid*1e3, '.')
         plt.ylabel('Table temp resid (mK)')
         plt.xlabel('Time')
-    if (True):
+    if (False):
         start = datetime.datetime(2017,9,2,1)
         stop = datetime.datetime(2017,9,2,9)
         start = datetime.datetime(2017,9,3,2)
