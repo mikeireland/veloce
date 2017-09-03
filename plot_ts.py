@@ -128,8 +128,8 @@ def plot_all(logfile, line='-', smooth=1):
     return tm_datetime, tm, t1, t2, t3
 
 if __name__=="__main__":
-    #tm_datetime, tm, t1, t2, t3 = plot_all('thermal_control.log')
-    tm_datetime, tm, t1, t2, t3 = plot_all('mimic_thermal.log',smooth=11)
+    tm_datetime, tm, t1, t2, t3 = plot_all('thermal_control.log')
+    #tm_datetime, tm, t1, t2, t3 = plot_all('mimic_thermal.log',smooth=11)
     if (False):
         start = datetime.datetime(2017,9,1,14)
         stop = datetime.datetime(2017,9,1,15)
@@ -138,7 +138,7 @@ if __name__=="__main__":
         plt.plot_date(tm_datetime_use, resid*1e3, '.')
         plt.ylabel('Table temp resid (mK)')
         plt.xlabel('Time')
-    if (True):
+    if (False):
         start = datetime.datetime(2017,9,2,1)
         stop = datetime.datetime(2017,9,2,9)
         start = datetime.datetime(2017,9,3,2)

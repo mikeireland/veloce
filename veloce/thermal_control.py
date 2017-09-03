@@ -390,8 +390,8 @@ class ThermalControl:
             #Set the Enclosure set point according to the table temperature
             t_tab = self.gettemp(0)
             self.nested_int += lqg_dt*(self.setpoint - t_tab)
-            self.enc_setpoint = self.setpoint + self.nested_gain*(self.setpoint - t_tab)\
-                self.nested_i*self.nested_int
+            self.enc_setpoint = self.setpoint + self.nested_gain*(self.setpoint - t_tab) \
+                + self.nested_i*self.nested_int
             logging.debug('ENCPID, {0:5.3f}, {1:5.3f}'.format(self.enc_setpoint, self.nested_int))
 
             #Start the Enclosue PID loop. For the integral component, reset 
@@ -402,22 +402,22 @@ class ThermalControl:
             if (h0<0):
                 h0=0
                 self.pid_ints[0]=0
-                self.nested_i=0
+                self.nested_int=0
             if (h0>1):
                 h0=1
                 self.pid_ints[0]=0
-                self.nested_i=0
+                self.nested_int=0
             t1 = self.gettemp(2)
             self.pid_ints[1] += lqg_dt*(self.enc_setpoint - t1)
             h1 = 0.5 + self.pid_gain*(self.enc_setpoint - t1) + self.pid_i*self.pid_ints[1]
             if (h1<0):
                 h1=0
                 self.pid_ints[1]=0
-                self.nested_i=0
+                self.nested_int=0
             if (h1>1):
                 h1=1
                 self.pid_ints[1]=0
-                self.nested_i=0
+                self.nested_int=0
                 
             #Now control the heaters...
             #As the lid has significantly less loss to ambient, use less power.
