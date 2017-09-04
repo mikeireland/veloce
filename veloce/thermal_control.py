@@ -27,7 +27,8 @@ PWM_MAX =1000000
 AIN_LABELS = ["Table", "Lower", "Upper"]
 AIN_NAMES = ["AIN0", "AIN2", "AIN4"] #Temperature analog input names
 #T_OFFSETS = [0., 0., 0.4] #Testing on 1/2 Sep
-T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
+#T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
+T_OFFSETS = [0., -0.089, -0.024] #Calibrated on 3 Sep (evening)
 HEATER_MAX = 3.409
 LJ_REST_TIME = 0.01
 
@@ -42,7 +43,7 @@ PID_GAIN_HZ = 0.002
 #the difference between the table and its setpoint. The 
 NESTED_GAIN = 10.0
 NESTED_TIME_CONST = 36000.0 #About 10 hours.
-TABLE_DEADZONE = 0.1
+TABLE_DEADZONE = 0.05
 
 LOG_FILENAME = 'thermal_control.log'
 #Set the following to logging.INFO on or logging.DEBUG on
