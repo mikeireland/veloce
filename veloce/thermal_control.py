@@ -24,11 +24,11 @@ HEATER_LABELS = ["Long", "Short", "Lid", "Base", "Cryostat"]
 HEATER_DIOS = ["0","2","3","4","5"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 #Table, lower then upper.
-AIN_LABELS = ["Table", "Lower", "Upper"]
-AIN_NAMES = ["AIN0", "AIN2", "AIN4"] #Temperature analog input names
+AIN_LABELS = ["Table", "Lower", "Upper", "Ambient"]
+AIN_NAMES = ["AIN0", "AIN2", "AIN4", "AIN6"] #Temperature analog input names
 #T_OFFSETS = [0., 0., 0.4] #Testing on 1/2 Sep
 #T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
-T_OFFSETS = [0., -0.01, 0.055] #Calibrated on 4 Sep
+T_OFFSETS = [0., -0.01, 0.055,0] #Calibrated on 4 Sep
 HEATER_MAX = 3.409
 LJ_REST_TIME = 0.01
 
@@ -75,7 +75,7 @@ class ThermalControl:
         self.ulqg = 0
         self.lqgverbose = False
         self.x_est = np.array([[0.], [0.], [0.]])
-        self.u = np.array([[0]])
+        self.u = [0, 0, 0, 0]
         #PID Constants
         self.pid=False
         self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
@@ -153,13 +153,8 @@ class ThermalControl:
         #Check that the labjack is open
         if not self.labjack_open:
             raise UserWarning("Labjack not open!")
-                
-        #Now we've error-checked, we can turn the heater fraction to an
-        #integer and write tot he labjack
-        aNames = ["DIO"+dio+"_EF_CONFIG_A"]
-        aValues = [int(fraction * PWM_MAX)]
-        numFrames = len(aNames)
-        results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+        self.set_heater(int(the_command[1]), float(the_command[2]))
+        #import pdb; pdb.set_trace()
         return "Done."
         
     def cmd_setgain(self, the_command):
@@ -261,10 +256,12 @@ class ThermalControl:
         fraction: float
             The fractional heater current (via PWM).
         """
+        self.u[ix] = fraction
         aNames = ["DIO"+HEATER_DIOS[ix]+"_EF_CONFIG_A"]
         aValues = [int(fraction * PWM_MAX)]
         numFrames = len(aNames)
         results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+        #import pdb; pdb.set_trace()
 
     def gettemp(self, ix, invert_voltage=True):
         """Return one temperature as a float. See Roberton's the
@@ -311,7 +308,7 @@ class ThermalControl:
             A list of temperatures for all sensors.
         """
         temps = ()
-        for ix in range(len(AIN_NAMES)):
+        for ix in range(0, (len(AIN_NAMES))):
             temps += (self.gettemp(ix),)
         return temps
 
@@ -443,6 +440,7 @@ class ThermalControl:
             
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))
+            logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u)[2:])
+            #import pdb; pdb.set_trace()
             #logging.info('TEMPS' + ', {:9.6f}'*len(AIN_NAMES).format())
-            
-        return 
+        return
