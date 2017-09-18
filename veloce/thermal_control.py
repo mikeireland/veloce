@@ -392,8 +392,10 @@ class ThermalControl:
             #This is a hack for limiting the affect of a limited heater current.
             if t_tab > self.setpoint + TABLE_DEADZONE:
                 t_tab = self.setpoint + TABLE_DEADZONE
+                self.nested_int=0
             if t_tab < self.setpoint - TABLE_DEADZONE:
                 t_tab = self.setpoint - TABLE_DEADZONE
+                self.nested_int=0
             self.nested_int += lqg_dt*(self.setpoint - t_tab)
             self.enc_setpoint = self.setpoint + self.nested_gain*(self.setpoint - t_tab) \
                 + self.nested_i*self.nested_int
