@@ -103,16 +103,19 @@ def plot_all(logfile, line='-', smooth=1):
     t1 = []
     t2 = []
     t3 = []
+    t4 = []
     for row in rr:
         if row[3].lstrip() == 'TEMPS':
             tm.append(float(row[1]))
             t1.append(float(row[4]))
             t2.append(float(row[5]))
             t3.append(float(row[6]))
+            t4.append(float(row[7]))
     tm = np.array(tm)
     t1 = np.array(t1)
     t2 = np.array(t2)
     t3 = np.array(t3)
+    t4 = np.array(t4)
     tm_datetime = np.array([datetime.datetime.fromtimestamp(t) for t in tm])
 
     #ax=plt.subplot()
@@ -121,6 +124,7 @@ def plot_all(logfile, line='-', smooth=1):
     plt.plot_date(tm_datetime, convolve(t1, cfunc), line, label='Table')
     plt.plot_date(tm_datetime, convolve(t2, cfunc), line, label='Lower')
     plt.plot_date(tm_datetime, convolve(t3, cfunc), line, label='Upper')
+    plt.plot_date(tm_datetime, convolve(t4, cfunc), line, label='Ambient')
     #ax.xaxis.set_major_formatter( DateFormatter('%H:%M') )
     plt.ylabel("Temperature (C)")
     plt.xlabel("Date and time")

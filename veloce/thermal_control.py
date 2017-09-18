@@ -24,10 +24,11 @@ HEATER_LABELS = ["Long", "Short", "Lid", "Base", "Cryostat"]
 HEATER_DIOS = ["0","2","3","4","5"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 #Table, lower then upper.
-AIN_LABELS = ["Table", "Lower", "Upper"]
-AIN_NAMES = ["AIN0", "AIN2", "AIN4"] #Temperature analog input names
+AIN_LABELS = ["Table", "Lower", "Upper", "Ambient"]
+AIN_NAMES = ["AIN0", "AIN2", "AIN4", "AIN6"] #Temperature analog input names
 #T_OFFSETS = [0., 0., 0.4] #Testing on 1/2 Sep
-T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
+#T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
+T_OFFSETS = [0., -0.01, 0.055,0] #Calibrated on 4 Sep
 HEATER_MAX = 3.409
 LJ_REST_TIME = 0.01
 
@@ -40,9 +41,9 @@ PID_GAIN_HZ = 0.002
 
 #In the nested servo loop, we set the outer enclosure setpoint according to
 #the difference between the table and its setpoint. The 
-NESTED_GAIN = 10.0
-NESTED_TIME_CONST = 36000.0 #About 10 hours.
-TABLE_DEADZONE = 0.1
+NESTED_GAIN = 8.0
+NESTED_TIME_CONST = 3600.0 #About 10 hours.
+TABLE_DEADZONE = 0.05
 
 LOG_FILENAME = 'thermal_control.log'
 #Set the following to logging.INFO on or logging.DEBUG on
@@ -74,7 +75,7 @@ class ThermalControl:
         self.ulqg = 0
         self.lqgverbose = False
         self.x_est = np.array([[0.], [0.], [0.]])
-        self.u = np.array([[0]])
+        self.u = [0, 0, 0, 0]
         #PID Constants
         self.pid=False
         self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
@@ -152,13 +153,8 @@ class ThermalControl:
         #Check that the labjack is open
         if not self.labjack_open:
             raise UserWarning("Labjack not open!")
-                
-        #Now we've error-checked, we can turn the heater fraction to an
-        #integer and write tot he labjack
-        aNames = ["DIO"+dio+"_EF_CONFIG_A"]
-        aValues = [int(fraction * PWM_MAX)]
-        numFrames = len(aNames)
-        results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+        self.set_heater(int(the_command[1]), float(the_command[2]))
+        #import pdb; pdb.set_trace()
         return "Done."
         
     def cmd_setgain(self, the_command):
@@ -260,10 +256,12 @@ class ThermalControl:
         fraction: float
             The fractional heater current (via PWM).
         """
+        self.u[ix] = fraction
         aNames = ["DIO"+HEATER_DIOS[ix]+"_EF_CONFIG_A"]
         aValues = [int(fraction * PWM_MAX)]
         numFrames = len(aNames)
         results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+        #import pdb; pdb.set_trace()
 
     def gettemp(self, ix, invert_voltage=True):
         """Return one temperature as a float. See Roberton's the
@@ -310,7 +308,7 @@ class ThermalControl:
             A list of temperatures for all sensors.
         """
         temps = ()
-        for ix in range(len(AIN_NAMES)):
+        for ix in range(0, (len(AIN_NAMES))):
             temps += (self.gettemp(ix),)
         return temps
 
@@ -394,11 +392,13 @@ class ThermalControl:
             #This is a hack for limiting the affect of a limited heater current.
             if t_tab > self.setpoint + TABLE_DEADZONE:
                 t_tab = self.setpoint + TABLE_DEADZONE
+                self.nested_int=0
             if t_tab < self.setpoint - TABLE_DEADZONE:
                 t_tab = self.setpoint - TABLE_DEADZONE
+                self.nested_int=0
             self.nested_int += lqg_dt*(self.setpoint - t_tab)
-            self.enc_setpoint = self.setpoint + self.nested_gain*(self.setpoint - t_tab)\
-                self.nested_i*self.nested_int
+            self.enc_setpoint = self.setpoint + self.nested_gain*(self.setpoint - t_tab) \
+                + self.nested_i*self.nested_int
             logging.debug('ENCPID, {0:5.3f}, {1:5.3f}'.format(self.enc_setpoint, self.nested_int))
 
             #Start the Enclosue PID loop. For the integral component, reset 
@@ -409,22 +409,22 @@ class ThermalControl:
             if (h0<0):
                 h0=0
                 self.pid_ints[0]=0
-                self.nested_i=0
+                self.nested_int=0
             if (h0>1):
                 h0=1
                 self.pid_ints[0]=0
-                self.nested_i=0
+                self.nested_int=0
             t1 = self.gettemp(2)
             self.pid_ints[1] += lqg_dt*(self.enc_setpoint - t1)
             h1 = 0.5 + self.pid_gain*(self.enc_setpoint - t1) + self.pid_i*self.pid_ints[1]
             if (h1<0):
                 h1=0
                 self.pid_ints[1]=0
-                self.nested_i=0
+                self.nested_int=0
             if (h1>1):
                 h1=1
                 self.pid_ints[1]=0
-                self.nested_i=0
+                self.nested_int=0
                 
             #Now control the heaters...
             #As the lid has significantly less loss to ambient, use less power.
@@ -442,6 +442,7 @@ class ThermalControl:
             
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))
+            logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u)[2:])
+            #import pdb; pdb.set_trace()
             #logging.info('TEMPS' + ', {:9.6f}'*len(AIN_NAMES).format())
-            
-        return 
+        return
