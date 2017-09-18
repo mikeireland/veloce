@@ -1,10 +1,16 @@
 # Simulator output function for least squares optimisation
 import csv
 import numpy as np
+from numba.decorators import jit, autojit
+from math import floor, ceil
+run_count = 0
+
+from scipy.optimize import leastsq, curve_fit, least_squares
+#from numba import jit
 voltage = 23.68 #voltage to heaters
 heater_resistance  = 10 #individual heater resistance ohms
 ##input data conditioning
-def read_data(logfile):
+def read_data(logfile, dt):
     #read in log file
     rr = csv.reader(open(logfile,'r'))
     temp_time = [] #Unix timestamps
@@ -69,7 +75,44 @@ def read_data(logfile):
     raw_heater[4,:] = h5
     raw_heater[5,:] = h6
     heat_time = heat_time - heat_time[0]
-    return raw_temp, temp_time, raw_heater, heat_time
+    
+    #autosample the data ---NEED to implement averaging
+    #the integration timestep is dt
+        #Simulation variables
+    t_end = 0
+    #import pdb; pdb.set_trace()
+    if temp_time[temp_time.size - 1] > heat_time[heat_time.size - 1]:
+        t_end = heat_time[heat_time.size - 1]
+    else:
+        t_end = temp_time[temp_time.size - 1]
+    timesteps = floor(round(t_end/dt))  #number of integration timesteps
+    temp_sampled = np.zeros( (4, timesteps) ) # setup a vector to write sampled temps to
+    heater_sampled = np.zeros( (6, timesteps) )# vector array to write sampled heater values to
+    t_average = raw_temp[:,0:1]
+    temps_index = 0
+    heaters_index = 0
+    t_integral = np.zeros((4,1))
+    #h_integral = np.array(6,1)
+    #now sample and hold average ahead, each step should take the 
+    for step in range(0, timesteps):
+        #update temperature index, by searching time value that matches sampling timestep
+        if step*dt > temp_time[temps_index]:
+            temps_index += 1
+        #update heater index
+        if step*dt > heat_time[heaters_index + 1]:
+            heaters_index += 1
+        #sample temperature
+        temp_sampled[:,step:(step + 1)] = raw_temp[:,temps_index:(temps_index + 1)]
+        #sample heaters
+        heater_sampled[:,step:(step + 1)] = raw_heater[:,heaters_index:(heaters_index + 1)]
+    u_array = np.zeros( (6, timesteps) )
+    y_array = np.zeros( (3, timesteps) )
+    amb_update = np.zeros( (15, timesteps) )
+    #now create u and y
+    u_array[:,:] = heater_sampled[:,:]
+    amb_update[0:1,:] = temp_sampled[3:4,:]
+    y_array[:,:] = temp_sampled[0:3,:]
+    return y_array, u_array, amb_update
 
     
 def condition_data(sampling_timestep, logfile):
@@ -158,9 +201,9 @@ def condition_data(sampling_timestep, logfile):
     #sample_heater = sample_heater[:,1:len(sample_heater[0,:])]
     return sample_temp, sample_heater
             
-        
-def simulate(constants, temps, temp_times, heaters, heater_times, return_temps=False):
-    
+  
+def simulate(constants, temps, heaters, ambient, dt, return_temps=False):
+
     """
     Parameters
     ----------
@@ -316,49 +359,81 @@ def simulate(constants, temps, temp_times, heaters, heater_times, return_temps=F
                    [0, gsb7/(gps7 + gsb7), 0, 0, 0, 0, 0, 0, gps7/(gps7 + gsb7), 0, 0, 0, 0, 0, 0] ])
 
     #Simulation variables
-    t_end = 0
-    #import pdb; pdb.set_trace()
-    if temp_times[temp_times.size - 1] > heater_times[heater_times.size - 1]:
-        t_end = temp_times[temp_times.size - 1]
-    else:
-        t_end = heater_times[heater_times.size - 1]
-    dt = 0.05 #the integration timestep
-    timesteps = int(round(t_end/dt)) #number of integration timesteps
+    timesteps = len(temps[0,:])#number of integration timesteps
     xvalues = np.zeros( (15, timesteps) ) #array of x vectors
-    yvalues = np.zeros( (3, timesteps) ) # setup a vector to write simulated yvalues to
-    ycomp = np.zeros( (3, timesteps) )
+    yvalues = np.zeros( (3, timesteps - 1) ) #array of y vectors
+    #import pdb; pdb.set_trace()
+    xvalues[:,0:1] = np.array([constants[15:31]]).T #set initial state vector based on initial sensor readings 
+
     
-    ycomp[:,0:1] = temps[0:3,0:1]
-    xvalues[:,0:1] = constants[15:31] #set initial state vector based on initial sensor readings 
-    yvalues[:,0:1] = temps[0:3,0:1] #set initial output based on initial state vector 
-    
-    temps_index = 0
-    heaters_index = 0
+
     #now simulate!
-    for step in range(1, timesteps):
-        #update temperature index
-        if step*dt > temp_times[temps_index + 1]:
-            temps_index += 1
-        if step*dt > heater_times[heaters_index + 1]:
-            heaters_index += 1
+    for step in range(1, (timesteps)):
         #simulate this timestep
-        xdot = np.dot(A_sim, xvalues[:, (step -1):step]) + np.dot(B_sim, heaters[:, heaters_index:(heaters_index + 1)])
-        xvalues[:,step:(step + 1)] = xvalues[:, (step - 1):step] + xdot*dt
-        yvalues[:,step:(step + 1)] = np.dot(C_sim, xvalues[:, (step -1):step])
-        #set ambient
-        xvalues[0,step] = temps[3,temps_index]
+        #import pdb; pdb.set_trace()
+        xdot = np.dot(A_sim, xvalues[:, (step -1):step]) + np.dot(B_sim, heaters[:, (step - 1):step])
+        #import pdb; pdb.set_trace()
+        xvalues[:,step:(step + 1)] = xvalues[:, (step - 1):step] + xdot*dt #+ ambient[:,step:(step + 1)]
+        xvalues[0,step:(step + 1)] = ambient[0,step:(step + 1)]
+        yvalues[:,(step - 1):step] = np.dot(C_sim, xvalues[:, (step -1):step])
         #record sensor values to compare
-        ycomp[:,step:(step + 1)] = temps[0:3, temps_index:(temps_index + 1)]
+        #ycomp[:,step:(step + 1)] = temps[:, step:(step + 1)]
+    print(constants)
     if return_temps:
         return yvalues
     else:
         #compute residuals and flatten
-        return (yvalues - ycomp).flatten()
+        return (yvalues - temps[:,0:(timesteps-1)]).flatten()
+
+
+def wrapper_sim(xdata, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16, c17, c18, c19, c20, c21, c22, c23, c24, c25, c26, c27, c28, c29):
+    constants = [0]*30
+    constants[0] = c0
+    constants[1] = c1
+    constants[2] = c2
+    constants[3] = c3
+    constants[4] = c4
+    constants[5] = c5
+    constants[6] = c6
+    constants[7] = c7
+    constants[8] = c8
+    constants[9] = c9
+    constants[10] = c10
+    constants[11] = c11
+    constants[12] = c12
+    constants[13] = c13
+    constants[14] = c14
+    constants[15] = c15
+    constants[16] = c16
+    constants[17] = c17
+    constants[18] = c18
+    constants[19] = c19
+    constants[20] = c20
+    constants[21] = c21
+    constants[22] = c22
+    constants[23] = c23
+    constants[24] = c24
+    constants[25] = c25
+    constants[26] = c26
+    constants[27] = c27
+    constants[28] = c28
+    constants[29] = c29
+    dt = 0.35
+    #constants[30] = c30
+    #constants[31] = c31
+    temps = xdata[0:3,:]
+    heaters = xdata[3:9,:]
+    ambient = xdata[9:24,:]
+    simulate_numba = autojit(simulate)
+    return simulate_numba(constants,temps, heaters, ambient, dt, True)
+    
 
 def run_optimisation():
     #set initialvalues to pass to simulator
-    file = "C:\\Users\\mattr\\OneDrive\\Documents\\Stromolo Job\\Testheater0.log"
-    constants = 25*np.ones( (30,1) )
+    dt = 0.05
+    file = "C:\\Users\\mattr\\OneDrive\\Documents\\Stromolo Job\\test_otherheaters.log"
+    constants = 27.6*np.ones( (30) )
+    #constants = (192.6, 264.0594, 74.2374, 7.6962, 0.4599, 0.003, 85.719, 1366.6667, 1.125, 29.8553, 82898.64, 234879.48, 2387.88, 46054.8, 1366.6667, amb[0,0], 25,25,25,25,25,25,25,25,25,25,25,25,25,25)
     constants[0] = 192.6 #individual_ghp
     constants[1] = 264.0594 #gpb_total
     constants[2] = 74.2374 #gpb7
@@ -374,7 +449,21 @@ def run_optimisation():
     constants[12] = 2387.88 #cb
     constants[13] = 46054.8 #bottom cp
     constants[14] = 1366.6667 #bottom linear conductance
-    raw_temp, temp_time, raw_heater, heat_time = read_data(file)
-    output = simulate(constants, raw_temp, temp_time, raw_heater, heat_time, True)
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
     
+    simulate_numba = autojit(simulate)
+    temps, heaters, ambient = read_data(file, dt)
+    constants[15] = ambient[0,0]
+    import matplotlib.pyplot as plt
+    out = simulate_numba(constants,temps, heaters, ambient, dt, True)
+    plt.plot(out[0,:])
+   # plt.plot(out[1,:])
+    #plt.plot(out[2,:])
+    plt.plot(temps[0,:])
+    #plt.plot(temps[1,:])
+    #plt.plot(temps[2,:])
+    plt.show()
+    import pdb; pdb.set_trace()
+    result = least_squares(simulate_numba, constants, args=(temps, heaters, ambient, dt, False), bounds=([0]*30,[np.inf]*30))
+    #x, cov = leastsq(simulate_numba, constants, args=(temps, heaters, ambient, dt, False), maxfev = 1000000000)
+    import pdb; pdb.set_trace()
