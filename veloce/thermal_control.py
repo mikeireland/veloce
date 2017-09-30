@@ -24,11 +24,12 @@ HEATER_LABELS = ["Long", "Short", "Lid", "Base", "Cryostat"]
 HEATER_DIOS = ["0","2","3","4","5"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 #Table, lower then upper.
-AIN_LABELS = ["Table", "Lower", "Upper", "Ambient"]
-AIN_NAMES = ["AIN0", "AIN2", "AIN4", "AIN6"] #Temperature analog input names
+AIN_LABELS = ["Table", "Lower", "Upper", "Ambient", "Aux 1", "Aux 2", "Aux 3"]
+AIN_NAMES = ["AIN0", "AIN2", "AIN4", "AIN6", "AIN8", "AIN10", "AIN12"] #Temperature analog input names
 #T_OFFSETS = [0., 0., 0.4] #Testing on 1/2 Sep
 #T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
-T_OFFSETS = [0., -0.01, 0.055,0] #Calibrated on 4 Sep
+#T_OFFSETS = [0., -0.01, 0.055,0] #Calibrated on 4 Sep
+T_OFFSETS = 7*[0] #set offset 0 for thermistor calibration
 HEATER_MAX = 3.409
 LJ_REST_TIME = 0.01
 
