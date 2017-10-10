@@ -205,6 +205,12 @@ class ThermalControl:
         temps = self.gettemps()
         return (', {:9.6f}'*len(AIN_NAMES)).format(*temps)[2:]
         #return "{0:9.6f}, {0:9.6f} {0:9.6f}".format(self.gettemp(0), self.gettemp(1), self.gettemp(2))
+        
+    def cmd_getresistance(self, the_command):
+        """Return the temperature to the client as a string"""
+        resistances = self.getresistances()
+        return (', {:12.9f}'*len(AIN_NAMES)).format(*resistances)[2:]
+        #return "{0:9.6f}, {0:9.6f} {0:9.6f}".format(self.gettemp(0), self.gettemp(1), self.gettemp(2))
 
     def cmd_lqgstart(self, the_command):
         self.lqg = True
@@ -300,6 +306,33 @@ class ThermalControl:
         tempCelc = tempKelv -273.15
         return tempCelc - T_OFFSETS[ix]
         
+    def getresistance(self, ix, invert_voltage=True):
+        """Return one resistance as a float. See Roberton's the
+        
+        v_out = v_in * [ R_t/(R_T + R) - R/(R_T + R) ]
+        R_T - R = (R_T + R) * (v_out/v_in)
+        R_T*(1 - (v_out/v_in)) = R * (1 + (v_out/v_in))
+        R_T = R * (v_in + v_out) / (v_in - v_out)
+        
+        Parameters
+        ----------
+        ix: int
+            Index of the sensor to be provided.
+            
+        Returns
+        -------
+        temp: float
+            Temperature in Celcius
+        """
+        ##uses converts voltage temperature, resistance implemented
+        R = 10000
+        Vin = 5
+        if invert_voltage:
+            voltage = -self.voltages[ix]
+        else:
+            voltage = self.voltages[ix]
+        resistance = R * (Vin + voltage)/(Vin - voltage)
+        return resistance
     def gettemps(self):
         """Get all temperatures.
         
@@ -312,6 +345,19 @@ class ThermalControl:
         for ix in range(0, (len(AIN_NAMES))):
             temps += (self.gettemp(ix),)
         return temps
+
+    def getresistances(self):
+        """Get all temperatures.
+        
+        Returns
+        -------
+        temps: list
+            A list of temperatures for all sensors.
+        """
+        resistances = ()
+        for ix in range(0, (len(AIN_NAMES))):
+            resistances += (self.getresistance(ix),)
+        return resistances
 
     def job_doservo(self):
         """Servo loop job
@@ -444,6 +490,7 @@ class ThermalControl:
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))
             logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u)[2:])
+            logging.info('Resistances, ' + self.cmd_getresistance(""))
             #import pdb; pdb.set_trace()
             #logging.info('TEMPS' + ', {:9.6f}'*len(AIN_NAMES).format())
         return

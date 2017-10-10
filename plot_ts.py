@@ -104,6 +104,9 @@ def plot_all(logfile, line='-', smooth=1):
     t2 = []
     t3 = []
     t4 = []
+    t5 = []
+    t6 = []
+    t7 = []
     for row in rr:
         if row[3].lstrip() == 'TEMPS':
             tm.append(float(row[1]))
@@ -111,6 +114,9 @@ def plot_all(logfile, line='-', smooth=1):
             t2.append(float(row[5]))
             t3.append(float(row[6]))
             t4.append(float(row[7]))
+            t5.append(float(row[8]))
+            t6.append(float(row[9]))
+            t7.append(float(row[10]))
     tm = np.array(tm)
     t1 = np.array(t1)
     t2 = np.array(t2)
@@ -121,10 +127,14 @@ def plot_all(logfile, line='-', smooth=1):
     #ax=plt.subplot()
     plt.clf()
     cfunc = np.ones(smooth)/float(smooth)
-    plt.plot_date(tm_datetime, convolve(t1, cfunc), line, label='Table')
-    plt.plot_date(tm_datetime, convolve(t2, cfunc), line, label='Lower')
-    plt.plot_date(tm_datetime, convolve(t3, cfunc), line, label='Upper')
-    plt.plot_date(tm_datetime, convolve(t4, cfunc), line, label='Ambient')
+    plt.plot_date(tm_datetime, t1, line, label='Table')
+    plt.plot_date(tm_datetime, t2, line, label='Lower')
+    plt.plot_date(tm_datetime, t3, line, label='Upper')
+    plt.plot_date(tm_datetime, t4, line, label='Ambient')
+    plt.plot_date(tm_datetime, t5, line, label='Aux 1')
+    plt.plot_date(tm_datetime, t6, line, label='Aux 2')
+    plt.plot_date(tm_datetime, t7, line, label='Aux 3')
+    
     #ax.xaxis.set_major_formatter( DateFormatter('%H:%M') )
     plt.ylabel("Temperature (C)")
     plt.xlabel("Date and time")
