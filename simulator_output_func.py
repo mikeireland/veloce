@@ -85,7 +85,7 @@ def read_data(logfile, dt):
         t_end = heat_time[heat_time.size - 1]
     else:
         t_end = temp_time[temp_time.size - 1]
-    timesteps = floor(round(t_end/dt))  #number of integration timesteps
+    timesteps = int(round(t_end/dt))  #number of integration timesteps
     temp_sampled = np.zeros( (4, timesteps) ) # setup a vector to write sampled temps to
     heater_sampled = np.zeros( (6, timesteps) )# vector array to write sampled heater values to
     t_average = raw_temp[:,0:1]
@@ -432,23 +432,7 @@ def run_optimisation():
     #set initialvalues to pass to simulator
     dt = 0.05
     file = "C:\\Users\\mattr\\OneDrive\\Documents\\Stromolo Job\\test_otherheaters.log"
-    constants = 27.6*np.ones( (30) )
-    #constants = (192.6, 264.0594, 74.2374, 7.6962, 0.4599, 0.003, 85.719, 1366.6667, 1.125, 29.8553, 82898.64, 234879.48, 2387.88, 46054.8, 1366.6667, amb[0,0], 25,25,25,25,25,25,25,25,25,25,25,25,25,25)
-    constants[0] = 192.6 #individual_ghp
-    constants[1] = 264.0594 #gpb_total
-    constants[2] = 74.2374 #gpb7
-    constants[3] = 7.6962 #gpa_total
-    constants[4] = 0.4599 #gps
-    constants[5] = 0.003 #gsb
-    constants[6] = 85.719  #individual_gih
-    constants[7] = 1366.6667 #linear conductance lid
-    constants[8] = 1.125 #optical table conductance to other sides
-    constants[9] = 29.8553 #individual_ch
-    constants[10] = 82898.64 #lid cp
-    constants[11] = 234879.48 #table cp
-    constants[12] = 2387.88 #cb
-    constants[13] = 46054.8 #bottom cp
-    constants[14] = 1366.6667 #bottom linear conductance
+    constants = default_constants()
     #import pdb; pdb.set_trace()
     
     simulate_numba = autojit(simulate)
@@ -467,3 +451,25 @@ def run_optimisation():
     result = least_squares(simulate_numba, constants, args=(temps, heaters, ambient, dt, False), bounds=([0]*30,[np.inf]*30))
     #x, cov = leastsq(simulate_numba, constants, args=(temps, heaters, ambient, dt, False), maxfev = 1000000000)
     import pdb; pdb.set_trace()
+    
+def default_constants():
+    """"Some initial/default values of constants"""
+    constants = 27.6*np.ones( (30) )
+    #constants = (192.6, 264.0594, 74.2374, 7.6962, 0.4599, 0.003, 85.719, 1366.6667, 1.125, 29.8553, 82898.64, 234879.48, 2387.88, 46054.8, 1366.6667, amb[0,0], 25,25,25,25,25,25,25,25,25,25,25,25,25,25)
+    constants[0] = 192.6 #individual_ghp
+    constants[1] = 264.0594 #gpb_total
+    constants[2] = 74.2374 #gpb7
+    constants[3] = 7.6962 #gpa_total
+    constants[4] = 0.4599 #gps
+    constants[5] = 0.003 #gsb
+    constants[6] = 85.719  #individual_gih
+    constants[7] = 1366.6667 #linear conductance lid
+    constants[8] = 1.125 #optical table conductance to other sides
+    constants[9] = 29.8553 #individual_ch
+    constants[10] = 82898.64 #lid cp
+    constants[11] = 234879.48 #table cp
+    constants[12] = 2387.88 #cb
+    constants[13] = 46054.8 #bottom cp
+    constants[14] = 1366.6667 #bottom linear conductance
+    constants[15] = 22.0 #Guess of ambient temperature.
+    return constants

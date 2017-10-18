@@ -88,6 +88,21 @@ def remove_poly(tm_datetime, tm, temps, start=None, stop=None, deg=2):
     resid = temps_use - pfunc(tm_use-tm_use[0])
     return resid, tm_datetime_use, pfit
 
+def read_7(logfile):
+    rr = csv.reader(open(logfile,'r'))
+    tm = []
+    ts = []
+    for row in rr:
+        if row[3].lstrip() == 'TEMPS':
+            tm.append(float(row[1]))
+            ts.append([float(r) for r in row[4:11]])
+            
+    tm = np.array(tm)
+    ts = np.array(ts)
+    tm_datetime = np.array([datetime.datetime.fromtimestamp(t) for t in tm])
+
+    return tm_datetime, tm, ts
+
 def plot_all(logfile, line='-', smooth=1):
     """Plotting function for a thermal_control log file
     
