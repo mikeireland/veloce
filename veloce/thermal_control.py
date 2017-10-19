@@ -41,7 +41,7 @@ TEMP_DERIV = 0.00035
 PID_GAIN_HZ = 0.002
 
 #Similarly for the cryostat servo loop. From Matthew Robertson email, 19 Oct.
-CRYO_PID_GAIN_HZ = 0.02
+CRYO_PID_GAIN_HZ = 0.004
 CRYO_TEMP_DERIV = 0.0008
 
 #In the nested servo loop, we set the outer enclosure setpoint according to
@@ -483,8 +483,8 @@ class ThermalControl:
                 
             #Also start the cryostat PID loop, which is completely independent.
             t2 = self.gettemp(3)
-            self.cryo_pid_int += lqg_dt*(self.setpoint - t0)
-            h2 = 0.5 + self.cryo_pid_gain*(self.setpoint - t0) + self.cryo_pid_i*self.cryo_pid_int
+            self.cryo_pid_int += lqg_dt*(self.setpoint - t2)
+            h2 = 0.5 + self.cryo_pid_gain*(self.setpoint - t2) + self.cryo_pid_i*self.cryo_pid_int
             if (h2<0):
                 h2=0
                 self.cryo_pid_int=0
