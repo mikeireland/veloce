@@ -499,7 +499,7 @@ class ThermalControl:
             self.set_heater(2, 0.7*h1)
             self.set_heater(3, h0)
             self.set_heater(4, h2)
-            logging.debug('HEATPID, {0:5.3f}, {1:5.3f}, {2:5.3f}, {3:5.3f}'.format(h0,h1,self.pid_ints[0],self.pid_ints[1]))
+            logging.debug('HEATPID, {0:5.3f}, {1:5.3f}, {2:5.3f}, {3:5.3f}, {4:5.3f}, {5:5.3f}'.format(h0,h1,h2,self.pid_ints[0],self.pid_ints[1],self.cryo_pid_int))
 
         if self.lqgverbose:
             print("---")
