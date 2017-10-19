@@ -83,6 +83,7 @@ class ThermalControl:
         self.u = [0, 0, 0, 0, 0]
         #PID Constants
         self.pid=False
+        self.cryo_pid=True #Inside the pid code
         self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
         self.pid_i = 0.5*PID_GAIN_HZ**2/TEMP_DERIV
         self.pid_ints = np.array([0.,0.])
@@ -249,6 +250,14 @@ class ThermalControl:
 
     def cmd_pidstop(self, the_command):
         self.pid = False
+        return ""
+
+    def cmd_cryostart(self, the_command):
+        self.cryo_pid = True
+        return ""
+
+    def cmd_cryostop(self, the_command):
+        self.cryo_pid = False
         return ""
 
     def cmd_setpoint(self, the_command):
@@ -482,15 +491,18 @@ class ThermalControl:
                 self.nested_int=0
                 
             #Also start the cryostat PID loop, which is completely independent.
-            t2 = self.gettemp(3)
-            self.cryo_pid_int += lqg_dt*(self.setpoint - t2)
-            h2 = 0.5 + self.cryo_pid_gain*(self.setpoint - t2) + self.cryo_pid_i*self.cryo_pid_int
-            if (h2<0):
+            if self.cryo_pid:
+                t2 = self.gettemp(3)
+                self.cryo_pid_int += lqg_dt*(self.setpoint - t2)
+                h2 = 0.5 + self.cryo_pid_gain*(self.setpoint - t2) + self.cryo_pid_i*self.cryo_pid_int
+                if (h2<0):
+                    h2=0
+                    self.cryo_pid_int=0
+                if (h2>1):
+                    h2=1
+                    self.cryo_pid_int=0
+            else:
                 h2=0
-                self.cryo_pid_int=0
-            if (h2>1):
-                h2=1
-                self.cryo_pid_int=0
 
             #Now control the heaters...
             #As the lid has significantly less loss to ambient, use less power.

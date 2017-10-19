@@ -16,4 +16,6 @@ stoprec
 lqgstop
 pidstart
 pidstop
+cryostart
+cryostop
 setpoint
