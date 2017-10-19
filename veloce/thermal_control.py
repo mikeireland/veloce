@@ -24,7 +24,7 @@ HEATER_LABELS = ["Long", "Short", "Lid", "Base", "Cryostat"]
 HEATER_DIOS = ["0","2","3","4","5"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 #Table, lower then upper.
-AIN_LABELS = ["Table", "Lower", "Upper", "Ambient", "Aux 1", "Aux 2", "Aux 3"]
+AIN_LABELS = ["Table", "Lower", "Upper", "Cryostat", "Aux 1", "Aux 2", "Aux 3"]
 AIN_NAMES = ["AIN0", "AIN2", "AIN4", "AIN6", "AIN8", "AIN10", "AIN12"] #Temperature analog input names
 #T_OFFSETS = [0., 0., 0.4] #Testing on 1/2 Sep
 #T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
@@ -39,6 +39,10 @@ TEMP_DERIV = 0.00035
 #constants - this is the shortest one, i.e. the time in between turning the
 #heater on or off and having a linear temperature ramp.
 PID_GAIN_HZ = 0.002
+
+#Similarly for the cryostat servo loop. From Matthew Robertson email, 19 Oct.
+CRYO_PID_GAIN_HZ = 0.02
+CRYO_TEMP_DERIV = 0.0008
 
 #In the nested servo loop, we set the outer enclosure setpoint according to
 #the difference between the table and its setpoint. The 
@@ -76,7 +80,7 @@ class ThermalControl:
         self.ulqg = 0
         self.lqgverbose = False
         self.x_est = np.array([[0.], [0.], [0.]])
-        self.u = [0, 0, 0, 0]
+        self.u = [0, 0, 0, 0, 0]
         #PID Constants
         self.pid=False
         self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
@@ -86,6 +90,10 @@ class ThermalControl:
         self.nested_gain = NESTED_GAIN
         self.nested_i = 1.0/NESTED_TIME_CONST
         self.nested_int = 0.
+        #Constants on the cryo servo loop.
+        self.cryo_pid_gain = CRYO_PID_GAIN_HZ/CRYO_TEMP_DERIV
+        self.cryo_pid_i = 0.5*CRYO_PID_GAIN_HZ**2/CRYO_TEMP_DERIV
+        self.cryo_pid_int = 0.
         
 
     #Our user or socket commands
@@ -473,12 +481,24 @@ class ThermalControl:
                 self.pid_ints[1]=0
                 self.nested_int=0
                 
+            #Also start the cryostat PID loop, which is completely independent.
+            t2 = self.gettemp(3)
+            self.cryo_pid_int += lqg_dt*(self.setpoint - t0)
+            h2 = 0.5 + self.cryo_pid_gain*(self.setpoint - t0) + self.cryo_pid_i*self.cryo_pid_int
+            if (h2<0):
+                h2=0
+                self.cryo_pid_int=0
+            if (h2>1):
+                h2=1
+                self.cryo_pid_int=0
+
             #Now control the heaters...
             #As the lid has significantly less loss to ambient, use less power.
             self.set_heater(0, h1)
             self.set_heater(1, h1)
             self.set_heater(2, 0.7*h1)
             self.set_heater(3, h0)
+            self.set_heater(4, h2)
             logging.debug('HEATPID, {0:5.3f}, {1:5.3f}, {2:5.3f}, {3:5.3f}'.format(h0,h1,self.pid_ints[0],self.pid_ints[1]))
 
         if self.lqgverbose:
@@ -490,7 +510,6 @@ class ThermalControl:
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))
             logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u)[2:])
-            logging.info('Resistances, ' + self.cmd_getresistance(""))
             #import pdb; pdb.set_trace()
             #logging.info('TEMPS' + ', {:9.6f}'*len(AIN_NAMES).format())
         return
