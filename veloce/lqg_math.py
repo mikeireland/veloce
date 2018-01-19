@@ -7,8 +7,6 @@ import scipy.linalg as la
 
 lqg_dt = 0.3
 
-
-
 #Random changes for ambient per second, tfloor, and tcryo in K.
 #FIXME: this should probably automatically change when the timestep changes
 T_random = 0.1*lqg_dt

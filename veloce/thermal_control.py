@@ -478,6 +478,9 @@ class ThermalControl:
                 print("Calculated Cryostat Inside Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
                 print("Calculated Floor Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
                 
+            
+            logging.debug('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u.flatten())[2:])
+                
         elif self.pid:
             #Set the Enclosure set point according to the table temperature
             t_tab = self.gettemp(0)
@@ -551,6 +554,5 @@ class ThermalControl:
             
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))
-            logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u.flatten())[2:])
 
         return
