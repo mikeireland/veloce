@@ -13,7 +13,6 @@ import numpy as np
 from labjack import ljm
 import time
 import numpy as np
-import matplotlib.pyplot as plt
 import logging
 
 #FIXME: we should of course import lqg_math and then refer to the variables as 
