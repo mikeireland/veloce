@@ -14,8 +14,14 @@ from labjack import ljm
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-from lqg_math import *
 import logging
+
+#FIXME: we should of course import lqg_math and then refer to the variables as 
+#e.g.
+#lqg_math.lqg_dt
+#lqg_math.A_mat
+#...etc.
+from lqg_math import *
 
 LABJACK_IP = "150.203.91.171"
 #Long sides, short sides, lid and base for FIO 0,2,3,4 respectively.
@@ -26,11 +32,9 @@ PWM_MAX =1000000
 #Table, lower then upper.
 AIN_LABELS = ["Table", "Lower", "Upper", "Cryostat", "Aux 1", "Aux 2", "Aux 3"]
 AIN_NAMES = ["AIN0", "AIN2", "AIN4", "AIN6", "AIN8", "AIN10", "AIN12"] #Temperature analog input names
-#T_OFFSETS = [0., 0., 0.4] #Testing on 1/2 Sep
-#T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
-#T_OFFSETS = [0., -0.01, 0.055,0] #Calibrated on 4 Sep
-#T_OFFSETS = 7*[0] #set offset 0 for thermistor calibration
-T_OFFSETS = [-0., 0.01531123, 0.06008029, 0.01812604, 0.06101344, 0.02001082, 0.06289097] #Calibrated using calibrate.py @25.3C - see M-Robertson for details
+
+#Calibrated using calibrate.py @25.3C - see M-Robertson for details
+T_OFFSETS = [-0., 0.01531123, 0.06008029, 0.01812604, 0.06101344, 0.02001082, 0.06289097] 
 HEATER_MAX = [67.2,28.8,13.09]
 LJ_REST_TIME = 0.01
 
@@ -61,47 +65,53 @@ class ThermalControl:
     def __init__(self, ip=None):
         if not ip:
             self.ip = LABJACK_IP
-        try:
-            self.handle = ljm.openS("ANY", "ANY", self.ip)
-        except:
-            print("Unable to open labjack {}".format(self.ip))
-            self.labjack_open=False
-            return
-        self.labjack_open=True
+        
+        self.cmd_open("")
+        
         #WARNING: This really should read from the labjack, and set the heater values
         #appropriately
         self.cmd_initialize("")
         self.voltages=99.9*np.ones(len(AIN_NAMES))
         self.lqg=False
         self.use_lqg=True
-        self.storedata = False
-        self.setpoint = 25.3
+        
+        #This turns logging on or off.
+        self.storedata = True 
+        self.setpoint = 25.0
         self.enc_setpoint = self.setpoint #Just a starting value
         self.last_print=-1
         self.ulqg = 0
         self.lqgverbose = False
-<<<<<<< HEAD
         self.x_est = np.zeros((7,1))
         self.u = np.zeros((3,1))
-=======
-        self.x_est = np.array([[0.], [0.], [0.]])
-        self.u = [0, 0, 0, 0, 0]
->>>>>>> 980161478274a4487b404ebff46844183215376d
+
         #PID Constants
         self.pid=False
         self.cryo_pid=True #Inside the pid code
         self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
         self.pid_i = 0.5*PID_GAIN_HZ**2/TEMP_DERIV
         self.pid_ints = np.array([0.,0.])
+
         #Constants for the nested servo loop. See constants above.
         self.nested_gain = NESTED_GAIN
         self.nested_i = 1.0/NESTED_TIME_CONST
         self.nested_int = 0.
+
         #Constants on the cryo servo loop.
         self.cryo_pid_gain = CRYO_PID_GAIN_HZ/CRYO_TEMP_DERIV
         self.cryo_pid_i = 0.5*CRYO_PID_GAIN_HZ**2/CRYO_TEMP_DERIV
         self.cryo_pid_int = 0.
-        
+    
+    def cmd_open(self, the_command):
+        """Open the socket connection to the labjack"""
+        try:
+            self.handle = ljm.openS("ANY", "ANY", self.ip)
+        except:
+            print("Unable to open labjack {}".format(self.ip))
+            self.labjack_open=False
+            return
+        self.labjack_open=True   
+        return "Labjack Connection Opened"
 
     #Our user or socket commands
     def cmd_initialize(self, the_command):
@@ -137,6 +147,7 @@ class ThermalControl:
         aValues = [1, 1, 10, 0]
         numFrames = len(aNames)
         results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+        return "Labjack Initialized"
         
     def cmd_close(self, the_command):
         """Close the connection to the labjack"""
@@ -212,8 +223,7 @@ class ThermalControl:
     def cmd_getvs(self, the_command):
         """Return the current voltages as a string.
         """
-        #FIXME: Return an arbitrary number of voltages.
-        return "{0:9.6f} {1:9.6f} {2:9.6f}".format(self.voltages[0], self.voltages[1], self.voltages[2])
+        return (', {:9.6f}'*len(AIN_NAMES)).format(*self.voltages)[2:]
 
     def cmd_gettemp(self, the_command):
         """Return the temperature to the client as a string"""
@@ -228,6 +238,7 @@ class ThermalControl:
         #return "{0:9.6f}, {0:9.6f} {0:9.6f}".format(self.gettemp(0), self.gettemp(1), self.gettemp(2))
 
     def cmd_lqgstart(self, the_command):
+        self.pid = False
         self.lqg = True
     
     def cmd_lqgsilent(self, the_command):
@@ -252,6 +263,7 @@ class ThermalControl:
 
     def cmd_pidstart(self, the_command):
         self.pid = True
+        self.lqg = False
         return ""
 
     def cmd_pidstop(self, the_command):
@@ -356,6 +368,7 @@ class ThermalControl:
             voltage = self.voltages[ix]
         resistance = R * (Vin + voltage)/(Vin - voltage)
         return resistance
+
     def gettemps(self):
         """Get all temperatures.
         
@@ -385,9 +398,13 @@ class ThermalControl:
     def job_doservo(self):
         """Servo loop job
         
-        Just read the voltage, and print once per second 
-        (plus the number of reads)"""
-        time.sleep(lqg_dt) #!!! MJI should be lqg_math.dt
+        Every lqg_math.lgq_dt, we read the voltages into our local variables, then
+        compute the temperatures. Note that gettemp therefore doesn't actually get
+        the temperatures, it just computs them from the last time voltages were read
+        in.
+        
+        """
+        time.sleep(lqg_dt) 
         for ix, ain_name in enumerate(AIN_NAMES):
             try:
                 self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
@@ -398,22 +415,22 @@ class ThermalControl:
                 try:
                     self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
                 except:
-                    print("Giving up reading temperature {:d}".format(ix))
-                    logging.error("Giving up reading temperature {:d}".format(ix))
+                    print("Trying to re-open labjack connection...")
+                    print(self.cmd_close(""))
+                    print(self.cmd_open(""))
+                    print(self.cmd_initialize(""))
+                    try:
+                        self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+                    except:
+                        print("Giving up reading temperature {:d}".format(ix))
+                        logging.error("Giving up reading temperature {:d}".format(ix))
+                    
         if time.time() > self.last_print + 1:
             self.last_print=time.time()
-        #    print("Voltage: {0:9.6f}".format(self.voltage))
 
-        #Get the current temperature and set it to .
-        
-
-        
-        if self.lqg:
-            #!!! MATTHEW - this next line is great for debugging !!!
-            #!!! Uncomment it to look at variables, e.g. print(y)
-            #!!! and y.shape
-            #import pdb; pdb.set_trace()
-            
+        #The servo can be LQG or PID. When either is set to true, the other is set to 
+        #false.
+        if self.lqg:            
             #Store the current temperature in y.
             
             y = np.array([[self.gettemp(2) - self.setpoint] ,[self.gettemp(0) - self.setpoint],[self.gettemp(1)- self.setpoint],[self.gettemp(3)- self.setpoint]])
@@ -454,17 +471,14 @@ class ThermalControl:
                     if i == 2:
                         self.set_heater(4, frac) 
 
-            #!!!Another error here, u was an array, so numpy prints it as a string
+            #Special real-time debugging mode for printing to screen
             if self.lqgverbose == 1:
                 for i in range(0,len(self.u)):
                     print("Heater " + str(i) + " Wattage:" + str(self.u[i]))
-                
                 print("Calculated Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
                 print("Calculated Cryostat Inside Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
                 print("Calculated Floor Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
-                #print("Heater Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
-                #print("Plate Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
-                #print(self.ulqg)
+                
         elif self.pid:
             #Set the Enclosure set point according to the table temperature
             t_tab = self.gettemp(0)
@@ -538,12 +552,6 @@ class ThermalControl:
             
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))
-<<<<<<< HEAD
-            #logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u)[2:])
-            #logging.info('Resistances, ' + self.cmd_getresistance(""))
-=======
-            logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u)[2:])
->>>>>>> 980161478274a4487b404ebff46844183215376d
-            #import pdb; pdb.set_trace()
-            #logging.info('TEMPS' + ', {:9.6f}'*len(AIN_NAMES).format())
+            logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u.flatten())[2:])
+
         return

@@ -118,7 +118,7 @@ def plot_all(logfile, line='-', smooth=1):
     t1 = []
     t2 = []
     t3 = []
-    #t4 = []
+    t4 = []
     #t5 = []
     #t6 = []
     #t7 = []
@@ -128,7 +128,7 @@ def plot_all(logfile, line='-', smooth=1):
             t1.append(float(row[4]))
             t2.append(float(row[5]))
             t3.append(float(row[6]))
-            #t4.append(float(row[7]))
+            t4.append(float(row[7]))
             #t5.append(float(row[8]))
             #t6.append(float(row[9]))
             #t7.append(float(row[10]))
@@ -136,7 +136,7 @@ def plot_all(logfile, line='-', smooth=1):
     t1 = np.array(t1)
     t2 = np.array(t2)
     t3 = np.array(t3)
-    #t4 = np.array(t4)
+    t4 = np.array(t4)
     tm_datetime = np.array([datetime.datetime.fromtimestamp(t) for t in tm])
 
     #ax=plt.subplot()
@@ -145,7 +145,7 @@ def plot_all(logfile, line='-', smooth=1):
     plt.plot_date(tm_datetime, t1, line, label='Table')
     plt.plot_date(tm_datetime, t2, line, label='Lower')
     plt.plot_date(tm_datetime, t3, line, label='Upper')
-    #plt.plot_date(tm_datetime, t4, line, label='Cryostat')
+    plt.plot_date(tm_datetime, t4, line, label='Cryostat')
     #plt.plot_date(tm_datetime, t5, line, label='Aux 1')
     #plt.plot_date(tm_datetime, t6, line, label='Aux 2')
     #plt.plot_date(tm_datetime, t7, line, label='Aux 3')
@@ -157,7 +157,7 @@ def plot_all(logfile, line='-', smooth=1):
     return tm_datetime, tm, t1, t2, t3
 
 if __name__=="__main__":
-    tm_datetime, tm, t1, t2, t3 = plot_all('thermal_control.log', smooth=11)
+    tm_datetime, tm, t1, t2, t3 = plot_all('thermal_control.log', smooth=21)
     #tm_datetime, tm, t1, t2, t3 = plot_all('mimic_thermal.log',smooth=11)
     if (False):
         start = datetime.datetime(2017,9,1,14)
