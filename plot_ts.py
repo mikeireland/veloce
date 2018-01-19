@@ -130,7 +130,7 @@ def plot_all(logfile, line='-', smooth=1):
     plt.plot_date(tm_datetime, t1, line, label='Table')
     plt.plot_date(tm_datetime, t2, line, label='Lower')
     plt.plot_date(tm_datetime, t3, line, label='Upper')
-    plt.plot_date(tm_datetime, t4, line, label='Ambient')
+    plt.plot_date(tm_datetime, t4, line, label='Cryostat')
     plt.plot_date(tm_datetime, t5, line, label='Aux 1')
     plt.plot_date(tm_datetime, t6, line, label='Aux 2')
     plt.plot_date(tm_datetime, t7, line, label='Aux 3')

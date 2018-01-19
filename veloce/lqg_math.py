@@ -7,28 +7,14 @@ import scipy.linalg as la
 
 lqg_dt = 0.3
 
-#Define thermal conductivities. Units: Watts/K.
-#with 3.409W (HEATER_MAX) on, we have an equilibrium
-#temperature about 11 degrees above ambient. This
-#equates to a coupling of 0.15 Watts/K for each side
-#of the plate. 
-G_sa = 0.15 #Vacuum radiative coupling would be 0.1, with black surfaces.
-G_ah = 0.15
-G_ps = 1000.0
-G_hp = 1000.0
-G_ih = 18
-#Define thermal capacitance. Units: Joules/K.
-C_p = 393.0 #Should be 393. Oritinally 860.0
-C_h = 60
-#Define our input noise damping time
-dt_damp = 1000.0
 
-#Random changes for ambient per second, in K.
+
+#Random changes for ambient per second, tfloor, and tcryo in K.
 #FIXME: this should probably automatically change when the timestep changes
-T_random = 0.01*lqg_dt
+T_random = 0.1*lqg_dt
 
 #Measurement noise per second
-T_noise = 0.001*lqg_dt
+T_noise = 0.0003*lqg_dt
 
 #so forget that in the cost function. Mike think's that a cost function with a 
 #1 in the [1,1] position is trying to minimise the RMS plate temperature. We 
@@ -40,17 +26,23 @@ T_noise = 0.001*lqg_dt
     
 #Better Q matrix, which needs checking
 #3x3 Q
-
+'''
 Q_mat = np.array([[(G_sa**2)/((G_ps+G_sa)**2), 0, G_sa*G_ps/((G_ps+G_sa)**2)], [0, 0, 0],
                     [G_sa*G_ps/((G_ps+G_sa)**2), 0, (G_ps**2)/((G_ps+G_sa)**2)]])
-
+'''
 #2x2 Q
 '''
 Q_mat = np.array([[(G_sa**2)/((G_ps+G_sa)**2), G_sa*G_ps/((G_ps+G_sa)**2)],
                     [G_sa*G_ps/((G_ps+G_sa)**2), (G_ps**2)/((G_ps+G_sa)**2)]])
 #Q_mat gain
 '''
-Q_mat = Q_mat*1
+Q_mat = np.array([[0,0,0,0,0,0,0],
+                  [0,0,0,0,0,0,0],
+                  [0,0,0,0,0,0,0],
+                  [0,0,0,0,0,0,0],
+                  [0,0,0,0,1,0,0],
+                  [0,0,0,0,0,0,0],
+                  [0,0,0,0,0,0,1]])
 #To minimise the squared 
 #sensor temperature, we divide by (G_sa + G_ps)**2, which is almost the same.
 
@@ -67,26 +59,73 @@ B_mat = np.array([[0],[0.0065], [4.4184e-05]])
 C_mat = np.array([[1.4998e-04,0,0.9999]])
 '''
 
+#DEFINE SIMULATION LOOP MATRIX CONSTANTS
+#Side numbers 
+# 1     Top/Lid
+# 2     Table
+# 3     Bottom/Base
+# 4     Cryostat
+
+#Heater Ambient Conductances
+# The bottom has 18 heater, and the top has 42 Heaters, so define an individual heater conductance and multiply these
+individual_gah = 0.0011
+gah1 = individual_gah*42
+gah3 = individual_gah*18
+#Heater to plate conductance
+#Use an individual conductance and then multiply by the number of heaters
+individual_ghp = 192.6
+ghp1 = individual_ghp*42
+ghp3 = individual_ghp*18
+ghp4 = individual_ghp
+#Plate Ambient conductances, set individual conductances for these
+gpa1 = 5.5206
+gpa3 = 2.1756 
+#Lid to base conductance
+g13 = 5.046
+#Lid to table radiative coupling
+g12 = 3.6
+#Table to Base conductance
+g23 = 4.5
+#Table cryostat conductance
+g24 = 10
+#Bottom to floor conductance
+gpf3 = 3.661
+#Conductance from outside of cryostat to inside temperature
+gpc4 = 0.0657
+#Capacitances
+cp1 = 82898.64 
+cp2 = 234879.48
+cp3 = 46054.8  
+cp4 = 8605.48
+
+A_mat= np.array([[-0.00000000001,0,0,0,0,0,0],
+                 [0,-0.00000000001,0,0,0,0,0],
+                 [0,0,-0.00000000001,0,0,0,0],
+                 [(gah1*ghp1 + gah1*gpa1 + ghp1*gpa1)/(cp1*(gah1 + ghp1)),0,0,((-(g12*gah1) - g13*gah1 - g12*ghp1 - g13*ghp1 - gah1*ghp1 - gah1*gpa1 - ghp1*gpa1))/(cp1*(gah1 + ghp1)),(g12*gah1 + g12*ghp1)/(cp1*(gah1 + ghp1)),(g13*gah1 + g13*ghp1)/(cp1*(gah1 + ghp1)),0],
+                 [0,0,0,g12/cp2,(-g12 - g23 - g24)/cp2,g23/cp2,g24/cp2],
+                 [(gah3*ghp3 + gah3*gpa3 + ghp3*gpa3)/(cp3*(gah3 + ghp3)),0,(gah3*gpf3 + ghp3*gpf3)/(cp3*(gah3 + ghp3)),(g13*gah3 + g13*ghp3)/(cp3*(gah3 + ghp3)),(g23*gah3 + g23*ghp3)/(cp3*(gah3 + ghp3)),(-(g13*gah3) - g23*gah3 - g13*ghp3 - g23*ghp3 - gah3*ghp3 - gah3*gpa3 - ghp3*gpa3 - gah3*gpf3 - ghp3*gpf3)/(cp3*(gah3 + ghp3)),0],
+                 [0,gpc4/cp4,0,0,g24/cp4,0,(-g24-gpc4)/cp4]])
+
+B_mat = np.array([[0,0,0],
+                  [0,0,0],
+                  [0,0,0],
+                  [ghp1/(cp1*(gah1 + ghp1)),0,0],
+                  [0,0,0],
+                  [0,ghp3/(cp3*(gah3 + ghp3)),0],
+                  [0,0,1/cp4]])
+#This edited from original since we cant measure t_amb at the moment
+C_mat = np.array([
+                  [0,0,0,1,0,0,0],
+                  [0,0,0,0,0,0,0],
+                  [0,0,0,0,0,1,0],
+                  [0,0,0,0,0,0,1]])
 #The "R" matrix, which balances wanting small heater outputs with maintaining
 #temperature.
 #FIXME: This seems to bias the algorithm if heater outputs can only be 
 #positive.
-R_mat = np.array([[0.001**2]])
+R_mat = 0.1*np.eye(3)
 
 
-#Define the matrices. Note that the vector has T_a then T_i then T_p
-G_frac = G_hp*G_ah/(G_hp + G_ah) + G_ps*G_sa/(G_ps + G_sa)
-A_mat = np.array([[-1/dt_damp,   0, 0],    
-           [G_ah*G_ih/(C_h*(G_ah+G_hp+G_ih)), (1/C_h)*((G_ih**2)/(G_ah+G_hp+G_ih)-G_ih), G_hp*G_ih/(C_h*(G_ah+G_hp+G_ih))],
-       [(1/C_p)*(G_ah*G_hp/(G_ah+G_hp+G_ih)+G_ps*G_sa/(G_ps+G_sa)), G_hp*G_ih/(C_p*(G_ah+G_hp+G_ih)), (1/C_p)*(-G_hp+(G_hp**2)/(G_ah+G_hp+G_ih)-G_ps+(G_ps**2)/(G_ps+G_sa))]])
-#Scale A_mat by the timestep and add the identity matrix because we are
-#operating discrete time
-#B is a column vector.
-B_mat = np.array([[0], 
-    [1/C_h],
-    [0]])
-
-C_mat = np.array([[G_sa/(G_sa + G_ps), 0, G_ps/(G_sa + G_ps)]])
 
 
 
@@ -98,15 +137,15 @@ A_mat = np.eye(len(A_mat)) + lqg_dt*A_mat
 B_mat *= lqg_dt
 
  #3x3 V
-V_mat = np.array([[T_random**2,0,0],
-                          [0,0,0], [0, 0, 0]])
+V_mat = (T_random**2)*np.eye(7)
+V_mat[0,0] = T_random**2
 '''
 #2x2 V
 V_mat = np.array([[T_random**2,0],
                           [0, 0]])
 '''
 
-W_mat = np.array([[T_noise**2]])
+W_mat = (T_noise**2)*np.eye(4) 
 
 #Note that the first equation has a couple of matrices that have to be 
 #transposed for the Riccati difference equation to apply in its standard form.

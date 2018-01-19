@@ -24,13 +24,14 @@ HEATER_LABELS = ["Long", "Short", "Lid", "Base", "Cryostat"]
 HEATER_DIOS = ["0","2","3","4","5"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 #Table, lower then upper.
-AIN_LABELS = ["Table", "Lower", "Upper", "Ambient", "Aux 1", "Aux 2", "Aux 3"]
+AIN_LABELS = ["Table", "Lower", "Upper", "Cryostat", "Aux 1", "Aux 2", "Aux 3"]
 AIN_NAMES = ["AIN0", "AIN2", "AIN4", "AIN6", "AIN8", "AIN10", "AIN12"] #Temperature analog input names
 #T_OFFSETS = [0., 0., 0.4] #Testing on 1/2 Sep
 #T_OFFSETS = [0., 0.087, 0.152] #Calibrated on 3 Sep.
 #T_OFFSETS = [0., -0.01, 0.055,0] #Calibrated on 4 Sep
-T_OFFSETS = 7*[0] #set offset 0 for thermistor calibration
-HEATER_MAX = 3.409
+#T_OFFSETS = 7*[0] #set offset 0 for thermistor calibration
+T_OFFSETS = [-0., 0.01531123, 0.06008029, 0.01812604, 0.06101344, 0.02001082, 0.06289097] #Calibrated using calibrate.py @25.3C - see M-Robertson for details
+HEATER_MAX = [67.2,28.8,13.09]
 LJ_REST_TIME = 0.01
 
 #Derivative of the temperature in K/s with the heater on full.
@@ -70,13 +71,13 @@ class ThermalControl:
         self.lqg=False
         self.use_lqg=True
         self.storedata = False
-        self.setpoint = 25.0
+        self.setpoint = 25.3
         self.enc_setpoint = self.setpoint #Just a starting value
         self.last_print=-1
         self.ulqg = 0
         self.lqgverbose = False
-        self.x_est = np.array([[0.], [0.], [0.]])
-        self.u = [0, 0, 0, 0]
+        self.x_est = np.zeros((7,1))
+        self.u = np.zeros((3,1))
         #PID Constants
         self.pid=False
         self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
@@ -263,7 +264,7 @@ class ThermalControl:
         fraction: float
             The fractional heater current (via PWM).
         """
-        self.u[ix] = fraction
+        #self.u[ix] = fraction
         aNames = ["DIO"+HEATER_DIOS[ix]+"_EF_CONFIG_A"]
         aValues = [int(fraction * PWM_MAX)]
         numFrames = len(aNames)
@@ -380,10 +381,11 @@ class ThermalControl:
         if time.time() > self.last_print + 1:
             self.last_print=time.time()
         #    print("Voltage: {0:9.6f}".format(self.voltage))
-      
+
         #Get the current temperature and set it to .
-        tempnow = self.gettemp(0)
-  
+        
+
+        
         if self.lqg:
             #!!! MATTHEW - this next line is great for debugging !!!
             #!!! Uncomment it to look at variables, e.g. print(y)
@@ -391,11 +393,12 @@ class ThermalControl:
             #import pdb; pdb.set_trace()
             
             #Store the current temperature in y.
-            y = np.zeros( (1,1) )
-            y[0] = tempnow - self.setpoint
+            
+            y = np.array([[self.gettemp(2) - self.setpoint] ,[self.gettemp(0) - self.setpoint],[self.gettemp(1)- self.setpoint],[self.gettemp(3)- self.setpoint]])
             
             #Based on this measurement, what is the next value of x_i+1 est?
             x_est_new = np.dot(A_mat, self.x_est)
+            #import pdb; pdb.set_trace()
             x_est_new += np.dot(B_mat, self.u)
             dummy = y - np.dot(C_mat, (np.dot(A_mat, self.x_est) + np.dot(B_mat, self.u)))
             x_est_new += np.dot(K_mat, dummy)
@@ -403,35 +406,43 @@ class ThermalControl:
             # Now find u
             if self.use_lqg:
                 self.u = -np.dot(L_mat, self.x_est)
-                self.ulqg = self.u[0,0]
+                self.ulqg = self.u
                 #offset because heater can't be negative
-                fraction = self.u[0,0]/HEATER_MAX
-
-                if fraction < 0:
-                    self.u[0,0] = 0
-                    fraction = 0
-                elif fraction > 1:
-                    self.u[0,0] = HEATER_MAX
-                    fraction = 1
-              
-                
-                #fraction = 0
-                #FIXME: This assumes we are using heater 0.
-                aNames = ["DIO"+HEATER_DIOS[0]+"_EF_CONFIG_A"]
-                aValues = [int(fraction * PWM_MAX)]
-                numFrames = len(aNames)
-                results = ljm.eWriteNames(self.handle, numFrames, aNames, aValues)
+                fraction = [0]*len(HEATER_MAX)
+                for i in range(0, len(HEATER_MAX)):
+                    #import pdb; pdb.set_trace()
+                    fraction[i] = self.u[i]/HEATER_MAX[i]
+                    
+                #import pdb; pdb.set_trace()
+                for i, frac in enumerate(fraction):
+                    if frac < 0:
+                        self.u[i,0] = 0
+                        fraction[i] = 0
+                    elif fraction > 1:
+                        self.u[i,0] = HEATER_MAX[i]
+                        fraction[i] = 1
+            
+                for i, frac in enumerate(fraction):
+                    if i == 0:
+                        self.set_heater(0,frac)
+                        self.set_heater(1,frac)
+                        self.set_heater(2,frac)
+                    if i == 1:
+                        self.set_heater(3,frac)
+                    if i == 2:
+                        self.set_heater(4, frac) 
 
             #!!!Another error here, u was an array, so numpy prints it as a string
             if self.lqgverbose == 1:
-                print("Heater Wattage: {0:9.6f}".format(self.u[0,0]))
-                print("Heater Fraction: {0:9.6f}".format(fraction))
-                print("Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
+                for i in range(0,len(self.u)):
+                    print("Heater " + str(i) + " Wattage:" + str(self.u[i]))
+                
+                print("Calculated Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
+                print("Calculated Cryostat Inside Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
+                print("Calculated Floor Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
                 #print("Heater Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
-               # print("Plate Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
-                tempsensor = -1*self.x_est[0,0]*G_sa/(G_sa+G_ps)+self.x_est[2,0]*G_ps/(G_ps+G_sa)
-                print("Estimated sensor Temperature {:9.4f}".format(tempsensor + self.setpoint))
-                print(self.ulqg)
+                #print("Plate Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
+                #print(self.ulqg)
         elif self.pid:
             #Set the Enclosure set point according to the table temperature
             t_tab = self.gettemp(0)
@@ -486,11 +497,12 @@ class ThermalControl:
             print("Table Temperature: {0:9.6f}".format(self.gettemp(0)))
             print("Lower Temperature: {0:9.6f}".format(self.gettemp(1)))
             print("Upper Temperature: {0:9.6f}".format(self.gettemp(2)))
+            print("Cryostat Temperature: {0:9.6f}".format(self.gettemp(3)))
             
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))
-            logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u)[2:])
-            logging.info('Resistances, ' + self.cmd_getresistance(""))
+            #logging.info('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u)[2:])
+            #logging.info('Resistances, ' + self.cmd_getresistance(""))
             #import pdb; pdb.set_trace()
             #logging.info('TEMPS' + ', {:9.6f}'*len(AIN_NAMES).format())
         return
