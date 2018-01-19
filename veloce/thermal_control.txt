@@ -1,3 +1,4 @@
+open
 initialize
 close
 heater
