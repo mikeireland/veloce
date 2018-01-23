@@ -20,7 +20,7 @@ import logging
 #lqg_math.lqg_dt
 #lqg_math.A_mat
 #...etc.
-from lqg_math_2_cap.py import *
+from lqg_math_2_cap import *
 
 LABJACK_IP = "150.203.91.171"
 #Long sides, short sides, lid and base for FIO 0,2,3,4 respectively.
