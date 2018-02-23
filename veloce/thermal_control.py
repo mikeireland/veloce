@@ -394,6 +394,108 @@ class ThermalControl:
             resistances += (self.getresistance(ix),)
         return resistances
 
+    def lqg_servo(self):
+        #Store the current temperature in y.
+        y = np.array([ [self.gettemp(2) - self.setpoint] ,[self.gettemp(0) - self.setpoint],[self.gettemp(1)- self.setpoint],[self.gettemp(3)- self.setpoint]])   
+        #Based on this measurement, what is the next value of x_i+1 est?
+        x_est_new = np.dot(lqg_math.A_mat, self.x_est)
+        #import pdb; pdb.set_trace()
+        x_est_new += np.dot(lqg_math.B_mat, self.u)
+        dummy = y - np.dot(lqg_math.C_mat, (np.dot(lqg_math.A_mat, self.x_est) + np.dot(lqg_math.B_mat, self.u)))
+        x_est_new += np.dot(lqg_math.K_mat, dummy)
+        self.x_est = x_est_new #x_i+1 has now become xi
+        # Now find u
+        self.u = -np.dot(lqg_math.L_mat, self.x_est)
+        self.ulqg = self.u
+        #offset because heater can't be negative
+        fraction = [0]*len(HEATER_MAX)
+        for i in range(0, len(HEATER_MAX)):
+	    fraction[i] = self.u[i]/HEATER_MAX[i]
+	    
+        #Setting the Heaters
+        for i, frac in enumerate(fraction):
+    	    if frac < 0:
+	        self.u[i,0] = 0
+	        fraction[i] = 0
+	    elif fraction > 1:
+	        self.u[i,0] = HEATER_MAX[i]
+	        fraction[i] = 1
+    
+        for i, frac in enumerate(fraction):
+	    if i == 0:
+	        self.set_heater(0,frac)
+	        self.set_heater(1,frac)
+	        self.set_heater(2,frac)
+	    if i == 1:
+	        self.set_heater(3,frac)
+	    if i == 2:
+	        self.set_heater(4, frac) 
+    def pid_servo(self):
+        #Set the Enclosure set point according to the table temperature
+        t_tab = self.gettemp(0)
+        #Ignore table temperatures more than TABLE_DEADZONE from the setpoint.
+        #This is a hack for limiting the affect of a limited heater current.
+        if t_tab > self.setpoint + TABLE_DEADZONE:
+           t_tab = self.setpoint + TABLE_DEADZONE
+           self.nested_int=0
+        if t_tab < self.setpoint - TABLE_DEADZONE:
+            t_tab = self.setpoint - TABLE_DEADZONE
+            self.nested_int=0
+        self.nested_int += lqg_math.lqg_dt*(self.setpoint - t_tab)
+        self.enc_setpoint = self.setpoint + self.nested_gain*(self.setpoint - t_tab) \
+            + self.nested_i*self.nested_int
+            
+        if self.storedata:
+            logging.debug('ENCPID, {0:5.3f}, {1:5.3f}'.format(self.enc_setpoint, self.nested_int))
+
+        #Start the Enclosue PID loop. For the integral component, reset 
+        #all integral terms whenever the heater hits the rail.
+        t0 = self.gettemp(1)
+        self.pid_ints[0] += lqg_math.lqg_dt*(self.enc_setpoint - t0)
+        h0 = 0.5 + self.pid_gain*(self.enc_setpoint - t0) + self.pid_i*self.pid_ints[0]
+        if (h0<0):
+            h0=0
+            self.pid_ints[0]=0
+            self.nested_int=0
+        if (h0>1):
+            h0=1
+            self.pid_ints[0]=0
+            self.nested_int=0
+        t1 = self.gettemp(2)
+        self.pid_ints[1] += lqg_math.lqg_dt*(self.enc_setpoint - t1)
+        h1 = 0.5 + self.pid_gain*(self.enc_setpoint - t1) + self.pid_i*self.pid_ints[1]
+        if (h1<0):
+            h1=0
+            self.pid_ints[1]=0
+            self.nested_int=0
+        if (h1>1):
+            h1=1
+            self.pid_ints[1]=0
+            self.nested_int=0
+                        
+        #Now control the heaters...
+        #As the lid has significantly less loss to ambient, use less power.
+        self.set_heater(0, h1)
+        self.set_heater(1, h1)
+        self.set_heater(2, 0.7*h1)
+        self.set_heater(3, h0)
+        return h0, h1
+
+
+    def cryo_servo(self):
+        t2 = self.gettemp(3)
+        self.cryo_pid_int += lqg_math.lqg_dt*(self.setpoint - t2)
+        h2 = 0.5 + self.cryo_pid_gain*(self.setpoint - t2) + self.cryo_pid_i*self.cryo_pid_int
+        if (h2<0):
+            h2=0
+            self.cryo_pid_int=0
+        if (h2>1):
+            h2=1
+            self.cryo_pid_int=0
+        #Now control the heaters
+        self.set_heater(4, h2)
+        return h2
+
     def job_doservo(self):
         """Servo loop job
         
@@ -429,122 +531,36 @@ class ThermalControl:
 
         #The servo can be LQG or PID. When either is set to true, the other is set to 
         #false.
-        if self.lqg:            
-            #Store the current temperature in y.
-            
-            y = np.array([ [self.gettemp(2) - self.setpoint] ,[self.gettemp(0) - self.setpoint],[self.gettemp(1)- self.setpoint],[self.gettemp(3)- self.setpoint]])
-            
-            #Based on this measurement, what is the next value of x_i+1 est?
-            x_est_new = np.dot(lqg_math.A_mat, self.x_est)
-            #import pdb; pdb.set_trace()
-            x_est_new += np.dot(lqg_math.B_mat, self.u)
-            dummy = y - np.dot(lqg_mat.C_mat, (np.dot(lqg_math.A_mat, self.x_est) + np.dot(lqg_math.B_mat, self.u)))
-            x_est_new += np.dot(lqg_math.K_mat, dummy)
-            self.x_est = x_est_new #x_i+1 has now become xi
-            # Now find u
-            if self.use_lqg:
-                self.u = -np.dot(lqg_math.L_mat, self.x_est)
-                self.ulqg = self.u
-                #offset because heater can't be negative
-                fraction = [0]*len(HEATER_MAX)
-                for i in range(0, len(HEATER_MAX)):
-                    #import pdb; pdb.set_trace()
-                    fraction[i] = self.u[i]/HEATER_MAX[i]
-                    
-                #import pdb; pdb.set_trace()
-                for i, frac in enumerate(fraction):
-                    if frac < 0:
-                        self.u[i,0] = 0
-                        fraction[i] = 0
-                    elif fraction > 1:
-                        self.u[i,0] = HEATER_MAX[i]
-                        fraction[i] = 1
-            
-                for i, frac in enumerate(fraction):
-                    if i == 0:
-                        self.set_heater(0,frac)
-                        self.set_heater(1,frac)
-                        self.set_heater(2,frac)
-                    if i == 1:
-                        self.set_heater(3,frac)
-                    if i == 2:
-                        self.set_heater(4, frac) 
+        if self.lqg:
+            self.lqg_servo()
 
             #Special real-time debugging mode for printing to screen
-            if self.lqgverbose == 1:
-                for i in range(0,len(self.ulqg)):
-                    print("Heater " + str(i) + " Wattage:" + str(self.ulqg[i]))
-                print("Calculated Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
-                print("Calculated Cryostat Inside Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
-                print("Calculated Floor Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
+        if self.lqgverbose == 1:
+            for i in range(0,len(self.ulqg)):
+                print("Heater " + str(i) + " Wattage:" + str(self.ulqg[i]))
+            print("Calculated Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
+            print("Calculated Cryostat Inside Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
+            print("Calculated Floor Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
                 
             
             logging.debug('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u.flatten())[2:])
                 
-        elif self.pid:
-            #Set the Enclosure set point according to the table temperature
-            t_tab = self.gettemp(0)
-            #Ignore table temperatures more than TABLE_DEADZONE from the setpoint.
-            #This is a hack for limiting the affect of a limited heater current.
-            if t_tab > self.setpoint + TABLE_DEADZONE:
-                t_tab = self.setpoint + TABLE_DEADZONE
-                self.nested_int=0
-            if t_tab < self.setpoint - TABLE_DEADZONE:
-                t_tab = self.setpoint - TABLE_DEADZONE
-                self.nested_int=0
-            self.nested_int += lqg_dt*(self.setpoint - t_tab)
-            self.enc_setpoint = self.setpoint + self.nested_gain*(self.setpoint - t_tab) \
-                + self.nested_i*self.nested_int
-            logging.debug('ENCPID, {0:5.3f}, {1:5.3f}'.format(self.enc_setpoint, self.nested_int))
-
-            #Start the Enclosue PID loop. For the integral component, reset 
-            #all integral terms whenever the heater hits the rail.
-            t0 = self.gettemp(1)
-            self.pid_ints[0] += lqg_dt*(self.enc_setpoint - t0)
-            h0 = 0.5 + self.pid_gain*(self.enc_setpoint - t0) + self.pid_i*self.pid_ints[0]
-            if (h0<0):
-                h0=0
-                self.pid_ints[0]=0
-                self.nested_int=0
-            if (h0>1):
-                h0=1
-                self.pid_ints[0]=0
-                self.nested_int=0
-            t1 = self.gettemp(2)
-            self.pid_ints[1] += lqg_dt*(self.enc_setpoint - t1)
-            h1 = 0.5 + self.pid_gain*(self.enc_setpoint - t1) + self.pid_i*self.pid_ints[1]
-            if (h1<0):
-                h1=0
-                self.pid_ints[1]=0
-                self.nested_int=0
-            if (h1>1):
-                h1=1
-                self.pid_ints[1]=0
-                self.nested_int=0
+        if self.pid:
+            h0, h1 = self.pid_servo()
+        else:
+	    h0 = 0
+            h1 = 0    
+ 
                 
             #Also start the cryostat PID loop, which is completely independent.
-            if self.cryo_pid:
-                t2 = self.gettemp(3)
-                self.cryo_pid_int += lqg_dt*(self.setpoint - t2)
-                h2 = 0.5 + self.cryo_pid_gain*(self.setpoint - t2) + self.cryo_pid_i*self.cryo_pid_int
-                if (h2<0):
-                    h2=0
-                    self.cryo_pid_int=0
-                if (h2>1):
-                    h2=1
-                    self.cryo_pid_int=0
-            else:
-                h2=0
+        if self.cryo_pid:
+            h2 = self.cryo_servo()
+        else:
+            h2 = 0    
 
-            #Now control the heaters...
-            #As the lid has significantly less loss to ambient, use less power.
-            self.set_heater(0, h1)
-            self.set_heater(1, h1)
-            self.set_heater(2, 0.7*h1)
-            self.set_heater(3, h0)
-            self.set_heater(4, h2)
+        if (self.cryo_pid or self.pid) and self.storedata: 
             logging.debug('HEATPID, {0:5.3f}, {1:5.3f}, {2:5.3f}, {3:5.3f}, {4:5.3f}, {5:5.3f}'.format(h0,h1,h2,self.pid_ints[0],self.pid_ints[1],self.cryo_pid_int))
-
+        
         if self.lqgverbose:
             print("---")
             print("Table Temperature: {0:9.6f}".format(self.gettemp(0)))
