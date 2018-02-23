@@ -22,7 +22,7 @@ import logging
 #...etc.
 from lqg_math_2_cap import *
 
-LABJACK_IP = "150.203.91.171"
+LABJACK_IP = "192.168.1.7"
 #Long sides, short sides, lid and base for FIO 0,2,3,4 respectively.
 #NB: Heaters checked at 30, 30, 20 and 20 ohms.
 HEATER_LABELS = ["Long", "Short", "Lid", "Base", "Cryostat"]
@@ -81,7 +81,7 @@ class ThermalControl:
         self.last_print=-1
         self.ulqg = 0
         self.lqgverbose = False
-        self.x_est = np.zeros((7,1))
+        self.x_est = np.zeros((11,1))
         self.u = np.zeros((3,1))
 
         #PID Constants
@@ -403,7 +403,7 @@ class ThermalControl:
         in.
         
         """
-        time.sleep(lqg_dt) 
+        time.sleep(lqg_math.lqg_dt) 
         for ix, ain_name in enumerate(AIN_NAMES):
             try:
                 self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
@@ -432,18 +432,18 @@ class ThermalControl:
         if self.lqg:            
             #Store the current temperature in y.
             
-            y = np.array([[self.gettemp(2) - self.setpoint] ,[self.gettemp(0) - self.setpoint],[self.gettemp(1)- self.setpoint],[self.gettemp(3)- self.setpoint]])
+            y = np.array([ [self.gettemp(2) - self.setpoint] ,[self.gettemp(0) - self.setpoint],[self.gettemp(1)- self.setpoint],[self.gettemp(3)- self.setpoint]])
             
             #Based on this measurement, what is the next value of x_i+1 est?
-            x_est_new = np.dot(A_mat, self.x_est)
+            x_est_new = np.dot(lqg_math.A_mat, self.x_est)
             #import pdb; pdb.set_trace()
-            x_est_new += np.dot(B_mat, self.u)
-            dummy = y - np.dot(C_mat, (np.dot(A_mat, self.x_est) + np.dot(B_mat, self.u)))
-            x_est_new += np.dot(K_mat, dummy)
+            x_est_new += np.dot(lqg_math.B_mat, self.u)
+            dummy = y - np.dot(lqg_mat.C_mat, (np.dot(lqg_math.A_mat, self.x_est) + np.dot(lqg_math.B_mat, self.u)))
+            x_est_new += np.dot(lqg_math.K_mat, dummy)
             self.x_est = x_est_new #x_i+1 has now become xi
             # Now find u
             if self.use_lqg:
-                self.u = -np.dot(L_mat, self.x_est)
+                self.u = -np.dot(lqg_math.L_mat, self.x_est)
                 self.ulqg = self.u
                 #offset because heater can't be negative
                 fraction = [0]*len(HEATER_MAX)
@@ -472,8 +472,8 @@ class ThermalControl:
 
             #Special real-time debugging mode for printing to screen
             if self.lqgverbose == 1:
-                for i in range(0,len(self.u)):
-                    print("Heater " + str(i) + " Wattage:" + str(self.u[i]))
+                for i in range(0,len(self.ulqg)):
+                    print("Heater " + str(i) + " Wattage:" + str(self.ulqg[i]))
                 print("Calculated Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
                 print("Calculated Cryostat Inside Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
                 print("Calculated Floor Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
@@ -551,6 +551,8 @@ class ThermalControl:
             print("Lower Temperature: {0:9.6f}".format(self.gettemp(1)))
             print("Upper Temperature: {0:9.6f}".format(self.gettemp(2)))
             print("Cryostat Temperature: {0:9.6f}".format(self.gettemp(3)))
+            print("Estimated ti1:")
+            print(int(self.x_est[4,0]) + self.setpoint)
             
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))

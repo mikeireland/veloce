@@ -37,9 +37,9 @@ Q_mat = np.array([[(G_sa**2)/((G_ps+G_sa)**2), G_sa*G_ps/((G_ps+G_sa)**2)],
 Q_mat = np.array([[0,0,0,0,0,0,0],
                   [0,0,0,0,0,0,0],
                   [0,0,0,0,0,0,0],
-                  [0,0,0,0,0,0,0],
-                  [0,0,0,0,1,0,0],
-                  [0,0,0,0,0,0,0],
+                  [0,0,0,1,0,0,0],
+                  [0,0,0,0,1000,0,0],
+                  [0,0,0,0,0,1,0],
                   [0,0,0,0,0,0,1]])
 #To minimise the squared 
 #sensor temperature, we divide by (G_sa + G_ps)**2, which is almost the same.
