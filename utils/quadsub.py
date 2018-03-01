@@ -7,12 +7,12 @@ import glob
 import astropy.io.fits as pyfits
 import os
 
-dir = '/Users/mireland/data/veloce/Feb28'
+dir = '/Users/mireland/data/veloce/Mar01'
 
 this_dir = os.getcwd()
 os.chdir(dir)
 
-fnames = glob.glob('E*fits')
+fnames = glob.glob('T*fits')
 
 for fn in fnames:
     im = pyfits.getdata(fn).astype(float)

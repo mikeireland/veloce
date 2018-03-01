@@ -8,11 +8,19 @@ from astropy.modeling import models, fitting
 plt.ion()
 
 fnames = glob.glob('/Users/mireland/data/veloce/Feb28/QE*fits')
-focus = focus = [int(f[-8:-5]) for f in fnames]
-nfirst=3
-threshold=2000
-display_it=False
+focus = [int(f[-8:-5]) for f in fnames]
 
+fnames = glob.glob('/Users/mireland/data/veloce/Feb28/Qe*fits')
+focus = np.zeros( (len(fnames)) )
+
+fnames = glob.glob('/Users/mireland/data/veloce/Mar01/QT*fits')
+focus = [int(f[-8:-5]) for f in fnames]
+
+nstart=8
+nfirst=3
+threshold=500
+display_it=False
+x_ignore = 100 #500 for etalon data.
 #------------------------------------------
 
 szx = pyfits.getheader(fnames[0])['NAXIS1']
@@ -21,7 +29,7 @@ szy = pyfits.getheader(fnames[0])['NAXIS2']
 #First lets read in the first few frames, and take a median to search for 
 #bright lines. We do this to avoid cosmic rays.
 first_data = np.zeros((nfirst,szy,szx))
-for ix, fn in enumerate(fnames[:nfirst]):
+for ix, fn in enumerate(fnames[nstart:nstart+nfirst]):
         first_data[ix] = pyfits.getdata(fn)
 med_data = np.median(first_data, axis=0)
 
@@ -34,10 +42,10 @@ wpeaks = np.where(med_data-smoothim > threshold)
 #we find within 5 pixels.
 peaks = []
 nfound = 0
-for xix, yix in zip(wpeaks[0], wpeaks[1]):
-    if xix<10 or xix <300 or xix>4100 or yix>4100:
+for xix, yix in zip(wpeaks[1], wpeaks[0]):
+    if xix<x_ignore or yix <100 or xix>4100 or yix>4000:
         continue
-    surrounding_pix = med_data[xix-5:xix+5,yix-5:yix+5]
+    surrounding_pix = med_data[yix-5:yix+5,xix-5:xix+5]
     if np.max(surrounding_pix) > 40000:
         continue
     duplicate=False
@@ -62,7 +70,7 @@ for j, fn in enumerate(fnames):
     print("Doing file {:d} of {:d}".format(j, len(fnames)))
     dd = pyfits.getdata(fn)
     for i, xyix in enumerate(peaks):
-        subarr = dd[xyix[0]-hw:xyix[0]+hw, xyix[1]-hw:xyix[1]+hw]
+        subarr = dd[xyix[1]-hw:xyix[1]+hw, xyix[0]-hw:xyix[0]+hw]
         subarr -= np.median(subarr)
         if (False):
             plt.clf()
@@ -90,12 +98,21 @@ if np.max(np.abs(focus)) > 0:
 
     spectral_best = np.mean(peakparams[wfoc,:,4], axis=0)
     
+spat_ix=-3 #-3 for best. Also 9
 for j in np.arange(0,2):
     plt.figure(j+1)
     plt.clf()
-    plt.plot(peaks[wc,j], peakparams[2,wc,3]*2.35,'.', label='Spatial')
-    plt.plot(peaks[wc,j], peakparams[2,wc,4]*2.35,'.', label='Spectral')
+    if j==0:
+        wc = np.where( (peaks[:,1]>500) * (peaks[:,1] < 3500))[0]
+    else:
+        wc = np.where( (peaks[:,0]>500) * (peaks[:,0] < 3500))[0]
+    plt.plot(peaks[wc,j], peakparams[spat_ix,wc,3]*2.35,'.', label='Spatial')
+    plt.plot(peaks[wc,j], peakparams[spat_ix,wc,4]*2.35,'.', label='Spectral')
+    plt.axis([100,4000,0,2.5])
     plt.legend()
     plt.ylabel('FWHM')
-    plt.xlabel('x pix')
-    plt.axis([100,4000,0,2.5])
+    if j==0:
+        plt.xlabel('y pix')
+    else:
+        plt.xlabel('x pix')
+    
