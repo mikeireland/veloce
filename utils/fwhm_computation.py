@@ -103,6 +103,7 @@ for j in np.arange(0,2):
     plt.figure(j+1)
     plt.clf()
     if j==0:
+        #Restrict the y coordinate
         wc = np.where( (peaks[:,1]>500) * (peaks[:,1] < 3500))[0]
     else:
         wc = np.where( (peaks[:,0]>500) * (peaks[:,0] < 3500))[0]
@@ -112,7 +113,7 @@ for j in np.arange(0,2):
     plt.legend()
     plt.ylabel('FWHM')
     if j==0:
-        plt.xlabel('y pix')
-    else:
         plt.xlabel('x pix')
+    else:
+        plt.xlabel('y pix')
     
