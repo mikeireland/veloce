@@ -430,6 +430,7 @@ class ThermalControl:
 	        self.set_heater(3,frac)
 	    if i == 2:
 	        self.set_heater(4, frac) 
+
     def pid_servo(self):
         #Set the Enclosure set point according to the table temperature
         t_tab = self.gettemp(0)
@@ -534,34 +535,15 @@ class ThermalControl:
         if self.lqg:
             self.lqg_servo()
 
-            #Special real-time debugging mode for printing to screen
+        #Special real-time debugging mode for printing to screen
         if self.lqgverbose == 1:
             for i in range(0,len(self.ulqg)):
                 print("Heater " + str(i) + " Wattage:" + str(self.ulqg[i]))
+
             print("Calculated Ambient Temperature {:9.4f}".format(self.x_est[0,0] + self.setpoint))
             print("Calculated Cryostat Inside Temperature {:9.4f}".format(self.x_est[1,0] + self.setpoint))
             print("Calculated Floor Temperature {:9.4f}".format(self.x_est[2,0] + self.setpoint))
-                
-            
             logging.debug('HEATERS, ' + (len(self.u)*", {:9.6f}").format(*self.u.flatten())[2:])
-                
-        if self.pid:
-            h0, h1 = self.pid_servo()
-        else:
-	    h0 = 0
-            h1 = 0    
- 
-                
-            #Also start the cryostat PID loop, which is completely independent.
-        if self.cryo_pid:
-            h2 = self.cryo_servo()
-        else:
-            h2 = 0    
-
-        if (self.cryo_pid or self.pid) and self.storedata: 
-            logging.debug('HEATPID, {0:5.3f}, {1:5.3f}, {2:5.3f}, {3:5.3f}, {4:5.3f}, {5:5.3f}'.format(h0,h1,h2,self.pid_ints[0],self.pid_ints[1],self.cryo_pid_int))
-        
-        if self.lqgverbose:
             print("---")
             print("Table Temperature: {0:9.6f}".format(self.gettemp(0)))
             print("Lower Temperature: {0:9.6f}".format(self.gettemp(1)))
@@ -569,6 +551,20 @@ class ThermalControl:
             print("Cryostat Temperature: {0:9.6f}".format(self.gettemp(3)))
             print("Estimated ti1:")
             print(int(self.x_est[4,0]) + self.setpoint)
+                
+        if self.pid:
+            h0, h1 = self.pid_servo()
+        else:
+	    h0 = 0
+            h1 = 0    
+ 
+        if self.cryo_pid:
+            h2 = self.cryo_servo()
+        else:
+            h2 = 0    
+         
+        if (self.cryo_pid or self.pid) and self.storedata: 
+            logging.debug('HEATPID, {0:5.3f}, {1:5.3f}, {2:5.3f}, {3:5.3f}, {4:5.3f}, {5:5.3f}'.format(h0,h1,h2,self.pid_ints[0],self.pid_ints[1],self.cryo_pid_int))
             
         if self.storedata:
             logging.info('TEMPS, ' + self.cmd_gettemp(""))
