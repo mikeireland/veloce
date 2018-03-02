@@ -395,6 +395,9 @@ class ThermalControl:
         return resistances
 
     def lqg_servo(self):
+        """Main LQG Servo Loop
+        ----------------------
+        """
         #Store the current temperature in y.
         y = np.array([ [self.gettemp(2) - self.setpoint] ,[self.gettemp(0) - self.setpoint],[self.gettemp(1)- self.setpoint],[self.gettemp(3)- self.setpoint]])   
         #Based on this measurement, what is the next value of x_i+1 est?
@@ -432,6 +435,12 @@ class ThermalControl:
 	        self.set_heater(4, frac) 
 
     def pid_servo(self):
+        """
+        Main PID servo loop
+        -------------------
+        Returns:
+        h0, h1 - Heater 1 and Heater 0 Values
+        """
         #Set the Enclosure set point according to the table temperature
         t_tab = self.gettemp(0)
         #Ignore table temperatures more than TABLE_DEADZONE from the setpoint.
@@ -484,6 +493,12 @@ class ThermalControl:
 
 
     def cryo_servo(self):
+        """
+        Cryostat pid servo loop
+        -------------
+        Returns:
+        h2 - Heater 2 value
+        """
         t2 = self.gettemp(3)
         self.cryo_pid_int += lqg_math.lqg_dt*(self.setpoint - t2)
         h2 = 0.5 + self.cryo_pid_gain*(self.setpoint - t2) + self.cryo_pid_i*self.cryo_pid_int
