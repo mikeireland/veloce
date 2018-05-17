@@ -524,20 +524,26 @@ class ThermalControl:
         time.sleep(lqg_math.lqg_dt) 
         for ix, ain_name in enumerate(AIN_NAMES):
             try:
-                self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+                voltage_read = ljm.eReadName(self.handle, ain_name)
+                assert np.abs(voltage_read) <= 1
+                self.voltages[ix] = voltage_read
             except:
                 print("Could not read temperature {:d} one time".format(ix))
                 logging.warning("Could not read temperature {:d} one time".format(ix))
                 #Now try again
                 try:
-                    self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+                    voltage_read = ljm.eReadName(self.handle, ain_name)
+                    assert np.abs(voltage_read) <= 1
+                    self.voltages[ix] = voltage_read
                 except:
                     print("Trying to re-open labjack connection...")
                     print(self.cmd_close(""))
                     print(self.cmd_open(""))
                     print(self.cmd_initialize(""))
                     try:
-                        self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+                        voltage_read = ljm.eReadName(self.handle, ain_name)
+                        assert np.abs(voltage_read) <= 1
+                        self.voltages[ix] = voltage_read
                     except:
                         print("Giving up reading temperature {:d}".format(ix))
                         logging.error("Giving up reading temperature {:d}".format(ix))
