@@ -14,6 +14,7 @@ from labjack import ljm
 import time
 import numpy as np
 import logging
+import os
 
 #FIXME: we should of course import lqg_math and then refer to the variables as 
 #e.g.
@@ -29,7 +30,7 @@ HEATER_LABELS = ["Long", "Short", "Lid", "Base", "Cryostat"]
 HEATER_DIOS = ["0","2","3","4","5"]         #Input/output indices of the heaters
 PWM_MAX =1000000
 #Table, lower then upper.
-AIN_LABELS = ["Table", "Lower", "Upper", "Cryostat", "Aux 1", "Aux 2", "Aux 3"]
+AIN_LABELS = ["Table", "Lower", "Upper", "Cryostat", "Aux 1", "Ambient", "Aux 3"]
 AIN_NAMES = ["AIN0", "AIN2", "AIN4", "AIN6", "AIN8", "AIN10", "AIN12"] #Temperature analog input names
 
 #Calibrated using calibrate.py @25.3C - see M-Robertson for details
@@ -43,6 +44,14 @@ TEMP_DERIV = 0.00035
 #constants - this is the shortest one, i.e. the time in between turning the
 #heater on or off and having a linear temperature ramp.
 PID_GAIN_HZ = 0.002
+#Nominal heater current (between 0 and 1) for nominal operation. 
+#The heaters are over-powered for quick warmup, so this should be less than
+#0.5.
+HEATER_NOMINAL = 0.2
+TEMP_SETPOINT = 25.0
+#When the cryo-tiger is on, the base is artifically cooled near the sensor.
+#This is a hack to prevent this over-heating the base. See logs around 29/30 May.
+CRYO_BASE_DELTA_T = 0.8
 
 #Similarly for the cryostat servo loop. From Matthew Robertson email, 19 Oct.
 CRYO_PID_GAIN_HZ = 0.004
@@ -55,9 +64,10 @@ NESTED_TIME_CONST = 3600.0 #About 10 hours.
 TABLE_DEADZONE = 0.05
 
 LOG_FILENAME = 'thermal_control.log'
+LOG_FORMAT = '%(asctime)s,0, %(created)f, %(levelname)s,  %(message)s'
 #Set the following to logging.INFO on or logging.DEBUG on
 logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG, \
-    format='%(asctime)s, %(created)f, %(levelname)s,  %(message)s', \
+    format=LOG_FORMAT, \
     datefmt='%Y-%m-%d %H:%M:%S')
 
 class ThermalControl:
@@ -66,17 +76,17 @@ class ThermalControl:
             self.ip = LABJACK_IP
         
         self.cmd_open("")
+        self.log_day = time.gmtime().tm_mday
         
         #WARNING: This really should read from the labjack, and set the heater values
         #appropriately
         self.cmd_initialize("")
         self.voltages=99.9*np.ones(len(AIN_NAMES))
         self.lqg=False
-        self.use_lqg=True
         
         #This turns logging on or off.
         self.storedata = True 
-        self.setpoint = 25.0
+        self.setpoint = TEMP_SETPOINT 
         self.enc_setpoint = self.setpoint #Just a starting value
         self.last_print=-1
         self.ulqg = 0
@@ -85,7 +95,7 @@ class ThermalControl:
         self.u = np.zeros((3,1))
 
         #PID Constants
-        self.pid=False
+        self.pid=True
         self.cryo_pid=True #Inside the pid code
         self.pid_gain = PID_GAIN_HZ/TEMP_DERIV
         self.pid_i = 0.5*PID_GAIN_HZ**2/TEMP_DERIV
@@ -338,7 +348,7 @@ class ThermalControl:
         temp_inv = aVal + bVal*np.log(resistance) + cVal*((np.log(resistance))**3)
         tempKelv = 1/(temp_inv)
         tempCelc = tempKelv -273.15
-        return tempCelc - T_OFFSETS[ix]
+        return tempCelc + T_OFFSETS[ix]
         
     def getresistance(self, ix, invert_voltage=True):
         """Return one resistance as a float. See Roberton's the
@@ -458,11 +468,13 @@ class ThermalControl:
         if self.storedata:
             logging.debug('ENCPID, {0:5.3f}, {1:5.3f}'.format(self.enc_setpoint, self.nested_int))
 
-        #Start the Enclosue PID loop. For the integral component, reset 
+        #Start the Enclosure PID loop. For the integral component, reset 
         #all integral terms whenever the heater hits the rail.
         t0 = self.gettemp(1)
+        if self.cryo_pid:
+            t0 += CRYO_BASE_DELTA_T	
         self.pid_ints[0] += lqg_math.lqg_dt*(self.enc_setpoint - t0)
-        h0 = 0.5 + self.pid_gain*(self.enc_setpoint - t0) + self.pid_i*self.pid_ints[0]
+        h0 = HEATER_NOMINAL + self.pid_gain*(self.enc_setpoint - t0) + self.pid_i*self.pid_ints[0]
         if (h0<0):
             h0=0
             self.pid_ints[0]=0
@@ -473,7 +485,7 @@ class ThermalControl:
             self.nested_int=0
         t1 = self.gettemp(2)
         self.pid_ints[1] += lqg_math.lqg_dt*(self.enc_setpoint - t1)
-        h1 = 0.5 + self.pid_gain*(self.enc_setpoint - t1) + self.pid_i*self.pid_ints[1]
+        h1 = HEATER_NOMINAL + self.pid_gain*(self.enc_setpoint - t1) + self.pid_i*self.pid_ints[1]
         if (h1<0):
             h1=0
             self.pid_ints[1]=0
@@ -521,23 +533,45 @@ class ThermalControl:
         in.
         
         """
-        time.sleep(lqg_math.lqg_dt) 
-        for ix, ain_name in enumerate(AIN_NAMES):
+        time.sleep(lqg_math.lqg_dt)
+ 
+        #Check the log time. FIXME This should be a separate function, and could be neatened after it is tested.
+        if (self.log_day != time.gmtime().tm_mday):
+            archive_logfile = "thermal_control_{:04d}{:02d}{:02d}.log".format(time.gmtime().tm_year, time.gmtime().tm_mon, time.gmtime().tm_mday)
+            os.rename(LOG_FILENAME, archive_logfile)
+            fileh = logging.FileHandler(LOG_FILENAME, 'a')
+            formatter = logging.Formatter(LOG_FORMAT)
+            fileh.setFormatter(formatter)
+            log = logging.getLogger()  # root logger
+            for hdlr in log.handlers[:]:  # remove all old handlers
+                log.removeHandler(hdlr)
+                log.addHandler(fileh)      # set the new handler 
+            self.log_day = time.gmtime().tm_mday
+
+        #Loop over the analog inputs and read them.
+	for ix, ain_name in enumerate(AIN_NAMES):
+            voltage_read=0
             try:
-                self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+                voltage_read = ljm.eReadName(self.handle, ain_name)
+                assert np.abs(voltage_read) < 1.1
+                self.voltages[ix] = voltage_read
             except:
-                print("Could not read temperature {:d} one time".format(ix))
-                logging.warning("Could not read temperature {:d} one time".format(ix))
+                print("Could not read temperature {:d} one time. Voltage {:6.2f}".format(ix, voltage_read))
+                logging.warning("Could not read temperature {:d} one time. Voltage {:6.2f}".format(ix, voltage_read))
                 #Now try again
                 try:
-                    self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+                    voltage_read = ljm.eReadName(self.handle, ain_name)
+                    assert np.abs(voltage_read) < 1.1
+                    self.voltages[ix] = voltage_read
                 except:
                     print("Trying to re-open labjack connection...")
                     print(self.cmd_close(""))
                     print(self.cmd_open(""))
                     print(self.cmd_initialize(""))
                     try:
-                        self.voltages[ix] = ljm.eReadName(self.handle, ain_name)
+                        voltage_read = ljm.eReadName(self.handle, ain_name)
+                        assert np.abs(voltage_read) < 1.1
+                        self.voltages[ix] = voltage_read
                     except:
                         print("Giving up reading temperature {:d}".format(ix))
                         logging.error("Giving up reading temperature {:d}".format(ix))

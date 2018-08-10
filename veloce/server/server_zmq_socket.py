@@ -22,7 +22,7 @@ class ServerSocket:
     #Some properties needed by multiple methods.
     clients=[]
     jobs=[]
-    def __init__(self, port, hardware_name, command_list):
+    def __init__(self, port, hardware_name, command_list, include_stdin=False):
         """A ZMQ socket  """
         try:
             self.context = zmq.Context()
@@ -42,7 +42,10 @@ class ServerSocket:
         #Set up the object "hardware_name" 
         self.hardware_name=hardware_name
         #Still use an input array, even though this is text only now.
-        self.input = [sys.stdin]
+        if include_stdin:
+            self.input = [sys.stdin]
+        else:
+            self.input=[]
 
 #This method deals with the various inputs from stdin and connected clients
     def socket_funct(self, s):

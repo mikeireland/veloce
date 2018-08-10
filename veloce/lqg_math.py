@@ -5,7 +5,9 @@ from __future__ import division, print_function
 import numpy as np
 import scipy.linalg as la
 
-lqg_dt = 0.3
+#Time interval of servo loop. As logging happens this often, we make it a moderately
+#large time, but much smaller than the ~250s smallest system time constant.
+lqg_dt = 2.0
 
 #Random changes for ambient per second, tfloor, and tcryo in K.
 #FIXME: this should probably automatically change when the timestep changes
