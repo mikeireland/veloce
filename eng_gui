@@ -1,0 +1,471 @@
+#!/usr/bin/env python
+from __future__ import print_function, division
+import sys
+import socket
+import struct
+import numpy as np
+import pdb
+import time
+try:
+    import astropy.io.fits as pyfits
+    FITS_SAVING=True
+except:
+    FITS_SAVING=False
+try:
+    import zmq
+except:
+    print("Please install zmq, e.g. with 'pip install --user zmq' if you don't have sudo privliges.")
+    raise UserWarning
+
+ZEROC = 273.15
+
+#Import only what we need from PyQt5, or everything from PyQt4. In any case, we'll try
+#to keep this back-compatible. Although this floods the namespace somewhat, everything
+#starts with a "Q" so there is little chance of getting mixed up.
+try:
+    from PyQt4.QtGui import *
+    from PyQt4.QtCore import *
+except:
+    try:
+        from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QHBoxLayout, \
+            QVBoxLayout, QLabel, QLineEdit, QTextEdit, QComboBox, QTabWidget, \
+            QCheckBox, QProgressBar
+        from PyQt5.QtCore import pyqtSlot, QTimer
+        from PyQt5.QtGui import QImage, QPixmap, QFont
+    except:
+        print("Please install PyQt4 or PyQt5.")
+        raise UserWarning
+
+#A hack to allow unicode as a type from python 2 to work in python 3. 
+#It would be better to typecast everything to str 
+if (sys.version_info > (3, 0)):
+    unicode = str
+
+#Some constants. Data types for Ian's communication protocol, and the servers
+#we'll be commecting to.
+DTYPES = {1:float, 2:int, 3:str, 4:bool, 5:"floatimg", 6:"intimg"}
+NAMES = ["Rosso", "Mech", "Therm", "IntTherm"]
+SOCKETS = {NAMES[0]:"44001", NAMES[1]:"44011", NAMES[2]:"44021", NAMES[3]:"44041"}
+
+#!!! Delete these two lines below once the IntTherm process is installed.
+#NAMES = ["Rosso", "Mech", "Therm"]
+#SOCKETS = {NAMES[0]:"44000", NAMES[1]:"44010", NAMES[2]:"44020"}
+
+#NAMES = ["Rosso"]
+#SOCKETS = {NAMES[0]:"44000"}
+
+def debug_trace():
+  '''Set a tracepoint in the Python debugger that works with Qt.
+  
+  This is useful for bugshooting in a Gui environment.'''
+  try:
+    from PyQt4.QtCore import pyqtRemoveInputHook
+  except:
+    from PyQt5.QtCore import pyqtRemoveInputHook
+  from pdb import set_trace
+  pyqtRemoveInputHook()
+  set_trace()
+
+class ClientSocket:
+    def __init__(self,IP="127.0.0.1",Port="44010"): 
+        """A socket
+        """
+        ADS = (IP,Port)
+        self.count=0
+        try:
+            self.context = zmq.Context()
+            self.client = self.context.socket(zmq.REQ)
+            tcpstring = "tcp://"+IP+":"+Port
+            self.client.connect(tcpstring)
+            self.client.RCVTIMEO = 20000
+            self.connected=True
+        except: 
+            print('ERROR: Could not connect to server. Please check that the server is running and IP is correct.')
+            self.connected=False
+
+    def send_command(self, command):
+        """Send a command to one of Ian's servers. """
+        
+        #If we aren't connected and the user pressed <Enter>, just try to reconnect
+        if (self.connected==False) and (len(command)==0):
+            try:
+                response = self.client.recv()
+            except:
+                self.count += 1
+                return "Could not receive buffered response - connection still lost ({0:d} times).".format(self.count)
+            self.connected=True
+            return "Connection re-established!"
+        
+        #Send a command to the client.
+        try: 
+            self.client.send_string("Req#"+command,zmq.NOBLOCK)
+        except:
+            self.connected=False 
+            self.count += 1
+            return 'Error sending command, connection lost ({0:d} times).'.format(self.count)
+        
+        #Receive the response
+        try:
+            response = self.client.recv()
+        except:
+            self.connected=False 
+            self.count += 1
+            return 'Error receiving response, connection lost ({0:d} times)\nPress Enter to reconnect.'.format(self.count)
+        try:
+            self.connected=True
+            #Lets see what data type we have, and support all relevant ones.
+            if len(response) > 4:
+                data_type = struct.unpack("<I", response[:4])[0]
+            if DTYPES[data_type]==str:
+                str_response = response[4:].decode(encoding='utf-8')
+                return str_response
+            if DTYPES[data_type]==bool:
+                bool_response = struct.unpack("<I", response[4:8])
+                return bool(bool_response)
+            elif DTYPES[data_type]=="intimg":
+                #For an integer image, data starts with the number of rows and
+                #columns, the time of exposure then the exposure time (in s)
+                if len(response) > 28:
+                    rows_cols = struct.unpack("<II", response[4:12])
+                    times = struct.unpack("dd", response[12:28])
+                npix = rows_cols[0]*rows_cols[1]
+                if len(response) < 28+npix*2:
+                    return 'Not enough pixels to unpack!'
+                data = struct.unpack("<{:d}H".format(npix), response[28:28+npix*2])
+                return [rows_cols, times, np.array(data).reshape(rows_cols)]
+            else:
+                return 'Unsupported response type'
+        except:
+            return 'Error parsing response!'
+
+
+class VeloceGui(QTabWidget):
+    def __init__(self, IP='127.0.0.1', parent=None):
+        """The Veloce GUI.
+        
+        Parameters
+        ----------
+        IP: str
+            The IP address of the Veloce server as as string
+        """
+        super(VeloceGui,self).__init__(parent)
+        
+        #Set up sockets. Each of the cameras needs a timeout and file number
+        self.sockets={}
+        self.timeouts={"Rosso":0}
+        self.fnum={"Rosso":0}
+        
+        #We'll have tabs for different servers
+        self.resize(400, 450)
+        self.tab_widgets = {}
+        vBoxlayouts = {}
+        self.line_edits = {}
+        self.info_buttons = {}
+        self.response_labels = {}
+        self.progress_bars = {}
+        self.exposure_bars = {}
+        
+        bigfont = QFont("Times", 20, QFont.Bold) 
+        
+        for name in NAMES:
+            self.sockets[name] = ClientSocket(IP=IP, Port=SOCKETS[name])
+            self.tab_widgets[name] = QWidget()
+            self.line_edits[name] = QLineEdit("")
+            self.info_buttons[name] = QPushButton("INFO", self)
+            
+            #Layout the common elements
+            vBoxlayouts[name] = QVBoxLayout()
+            vBoxlayouts[name].setSpacing(3)
+            
+            #First, the command entry box
+            lbl1 = QLabel('Command: ', self)
+            self.line_edits[name].returnPressed.connect(self.command_enter)
+            
+            #Next, the info button
+            self.info_buttons[name].clicked.connect(self.info_click)
+            
+            hbox1 = QHBoxLayout()
+            hbox1.addWidget(lbl1)
+            hbox1.addWidget(self.line_edits[name])
+            hbox1.addWidget(self.info_buttons[name])
+            vBoxlayouts[name].addLayout(hbox1)
+            
+            #Next, the response box
+            self.response_labels[name] = QTextEdit('[No Sever Response Yet]', self)
+            self.response_labels[name].setReadOnly(True)
+            self.response_labels[name].setStyleSheet("QTextEdit { background-color : black; color : lime; }")
+            self.response_labels[name].setFixedWidth(360)
+            self.response_labels[name].setFixedHeight(150)
+            vBoxlayouts[name].addWidget(self.response_labels[name])
+        
+        #*********** Rosso **************
+        #Add controls for taking exposures with the Rosso camera
+        #Missing COLOFFSET and ROWOFFSET because they don't work.
+        #Have: COLBIN=, ROWBIN=, EXPTIME=, DARK
+        #First row...
+        hbox1 = QHBoxLayout()
+        lbl1 = QLabel('Save Directory: ', self)
+        self.save_dir_line_edit = QLineEdit("./")
+        hbox1.addWidget(lbl1)
+        hbox1.addWidget(self.save_dir_line_edit)
+        vBoxlayouts["Rosso"].addLayout(hbox1)
+        
+        #2nd Row... 
+        hbox1 = QHBoxLayout()
+        lbl1 = QLabel('x binning: ', self)
+        self.x_bin_line_edit = QLineEdit("1")
+        lbl2 = QLabel('y binning: ', self)
+        self.y_bin_line_edit = QLineEdit("1")
+        self.dark_check_box = QCheckBox("Dark")
+        self.dark_check_box.setChecked(False)
+        hbox1.addWidget(lbl1)
+        hbox1.addWidget(self.x_bin_line_edit)
+        hbox1.addWidget(lbl2)
+        hbox1.addWidget(self.y_bin_line_edit)
+        hbox1.addWidget(self.dark_check_box)
+        vBoxlayouts["Rosso"].addLayout(hbox1)
+        
+        #3rd Row...
+        hbox1 = QHBoxLayout()
+        lbl1 = QLabel('Exp. Time (ms): ', self)
+        self.exptime_line_edit = QLineEdit("0")
+        self.expose_button = QPushButton("Expose", self)
+        self.expose_button.clicked.connect(self.expose_button_click)
+        self.readout_button = QPushButton("Save Fits", self)
+        self.readout_button.clicked.connect(self.readout_button_click)
+        hbox1.addWidget(lbl1)
+        hbox1.addWidget(self.exptime_line_edit)
+        hbox1.addWidget(self.expose_button)
+        hbox1.addWidget(self.readout_button)
+        vBoxlayouts["Rosso"].addLayout(hbox1)
+        
+        #Exposure and readout progress bars ...
+        self.exposure_bars["Rosso"] = QProgressBar(self)
+        #self.exposure_bars["Rosso"].setMaximum(1)
+        self.progress_bars["Rosso"] = QProgressBar(self)
+        hbox1 = QHBoxLayout()
+        lbl1 = QLabel('Exposure: ', self)
+        hbox1.addWidget(lbl1)
+        hbox1.addWidget(self.exposure_bars["Rosso"])
+        vBoxlayouts["Rosso"].addLayout(hbox1)
+        hbox1 = QHBoxLayout()
+        lbl1 = QLabel('Readout:  ', self)
+        hbox1.addWidget(lbl1)
+        hbox1.addWidget(self.progress_bars["Rosso"])
+        vBoxlayouts["Rosso"].addLayout(hbox1)
+        
+        #Bold temperatures to monitor
+        hbox1 = QHBoxLayout()
+        lbl1 = QLabel('Tdetector/Heater: ', self)
+        self.dettemp_label = QLabel('-', self)
+        self.dettemp_label.setFont(bigfont)
+        hbox1.addWidget(lbl1)
+        hbox1.addWidget(self.dettemp_label)
+        vBoxlayouts["Rosso"].addLayout(hbox1)
+         
+        #*********** Mech **************
+        hbox1 = QHBoxLayout()
+        lbl1 = QLabel('Pressure (regulator): ', self)
+        self.pressure_label = QLabel('-', self)
+        self.pressure_label.setFont(bigfont)
+        hbox1.addWidget(lbl1)
+        hbox1.addWidget(self.pressure_label)
+        vBoxlayouts["Mech"].addLayout(hbox1)
+        hbox1 = QHBoxLayout()
+        self.floodlight_on_button = QPushButton("Flood On", self)
+        self.floodlight_on_button.clicked.connect(self.flood_on_click)
+        self.floodlight_off_button = QPushButton("Flood Off", self)
+        self.floodlight_off_button.clicked.connect(self.flood_off_click)
+        hbox1.addWidget(self.floodlight_on_button)
+        hbox1.addWidget(self.floodlight_off_button)
+        vBoxlayouts["Mech"].addLayout(hbox1)
+        
+        #*********** IntTherm **************
+        hbox1 = QHBoxLayout()
+        lbl1 = QLabel('Table Temperature: ', self)
+        self.tabtemp_label = QLabel('-', self)
+        self.tabtemp_label.setFont(bigfont)
+        hbox1.addWidget(lbl1)
+        hbox1.addWidget(self.tabtemp_label)
+        vBoxlayouts["IntTherm"].addLayout(hbox1)
+        
+        # Complete setup, add status labels and add tabs to the GUI
+        self.status_labels = {}
+        for name in NAMES:
+            #A status label - Same number of lines for each server.
+            self.status_labels[name] = QLabel("", self)
+            vBoxlayouts[name].addWidget(self.status_labels[name])
+            self.tab_widgets[name].setLayout(vBoxlayouts[name])
+            self.addTab(self.tab_widgets[name],name)
+
+        #Now show everything, and start status timers.        
+        self.setWindowTitle("Veloce Eng Gui")
+        self.stimer = QTimer()
+        self.imtimers={}
+        self.imtimers["Rosso"] = QTimer()
+        self.ask_for_status() 
+
+    def ask_for_status(self):
+        """Ask for status for the server that applies to the current tab (as we can
+        only see one server at a time)"""
+        command = "INFO"
+        name = NAMES[self.currentIndex()]
+        #As this is on a continuous timer, only do anything if we are 
+        #connected 
+        if (self.sockets[name].connected):
+            response = self.sockets[name].send_command("INFO")
+            if type(response)!=str and type(response)!=unicode:
+                raise UserWarning("Incorrect INFO response!")
+            if response[:5]=='Error':
+                print("Error in INFO response from {:s}...".format(name))
+            else:
+                status_list = response.split('\n')
+                if len(status_list)<3:
+                    status_list = response.split(' ')
+                status = {t.split("=")[0].lstrip():t.split("=")[1] for t in status_list if t.find("=")>0}
+                #Now deal with the response in a different way for each server.
+                if name=="Rosso":
+                    self.dettemp_label.setText("{:6.3f} / {:4.1f}".format(float(status["detectortemp"]), float(status["heatingload"])))
+                    self.status_labels[name].setText("Tc: {:6.2f} Gain: {:d} Speed: {:d} ".format(\
+                        float(status["cryoheadtemp"]), 
+                        int(status["gainindex"]), int(status["speedindex"])) + status["state"])
+                    if "progress" in status.keys():
+                        self.progress_bars[name].setValue(float(status["progress"]))
+                        self.exposure_bars[name].setValue(100)                    
+                    elif ("timeremaining" in status.keys()) and ("exposedtime" in status.keys()):
+                        exposure_frac = (float(status["exposedtime"]) - 
+                            float(status["timeremaining"]))/float(status["exposedtime"])
+                        exposure_frac = np.maximum(np.minimum(exposure_frac,1),0)
+                        self.exposure_bars[name].setValue(100*exposure_frac)
+                        self.progress_bars[name].setValue(0)
+                    else:
+                        self.progress_bars[name].setValue(0)
+                        self.exposure_bars[name].setValue(0)  
+                elif name=="Mech":
+                    self.pressure_label.setText("{:6.2f}".format(float(status["pressure.regulator"]))) 
+                    self.status_labels[name].setText("Tint: {:7.3f} Hint: {:7.2f} Troom: {:6.2f} Ptruth: {:6.2f}".format(\
+                        float(status["temperature.internal"])-ZEROC, \
+                        float(status["humidity.internal"]), \
+                        float(status["temperature.room"])-ZEROC, \
+                        float(status["pressure.internal"])))
+                elif name=="IntTherm":
+                    self.tabtemp_label.setText("{:7.4f}".format(float(status["temperatures.table"])-ZEROC)) 
+                    self.status_labels[name].setText("Tl: {:7.4f} Tu: {:7.4f} Tc: {:7.4f}".format(\
+                        float(status["temperatures.lower"])-ZEROC, \
+                        float(status["temperatures.upper"])-ZEROC, \
+                        float(status["temperatures.cryostat"])-ZEROC))
+                elif name=="Therm":
+                    self.status_labels[name].setText("Text: {:6.3f} Tset: {:6.3f} Tmc: {:6.3f}".format(\
+                        float(status["externalenclosure"])-ZEROC,\
+                        float(status["externalenclosure.setpoint"])-ZEROC,\
+                        float(status["minichiller.internal"])-ZEROC))
+        #Restart the timer to ask for status again.
+        self.stimer.singleShot(2000, self.ask_for_status)
+
+    def info_click(self):
+        self.send_to_server("INFO")
+        
+    def flood_on_click(self):
+        self.send_to_server("SETLEVEL COMPID=floodlight VALUE=On")
+
+    def flood_off_click(self):
+        self.send_to_server("SETLEVEL COMPID=floodlight VALUE=Off")
+
+    def expose_button_click(self):
+        """Start an exposure. Note that once the data have been taken, this does not
+        collect the data.
+        """
+        name = NAMES[self.currentIndex()]
+        #Check inputs
+        try:
+            exptime = float(self.exptime_line_edit.text())
+        except:
+            self.response_labels[name].setText("Gui ERROR: exposure time must be a float")
+            return
+        try:
+            x_bin = int(self.x_bin_line_edit.text())
+            assert x_bin in [1,2,4,8]
+        except:
+            self.response_labels[name].setText("Gui ERROR: x binning must be 1,2,4 or 8")
+            return
+        try:
+            y_bin = int(self.y_bin_line_edit.text())
+            assert y_bin in [1,2,4,8]
+        except:
+            self.response_labels[name].setText("Gui ERROR: y binning must be 1,2,4 or 8")
+            return
+            
+        expstring = "EXPOSE EXPTIME={:f} COLBIN={:d} ROWBIN={:d}".format(exptime, x_bin, y_bin)        
+        if self.dark_check_box.isChecked():
+            expstring += " DARK"
+        self.timeouts[name] = time.time() + exptime + 45
+        try:
+            response = self.sockets[name].send_command(expstring)
+        except:
+            response = "*** Connection Error ***"
+        if type(response)==str or type(response)==unicode:
+            self.response_labels[name].setText(response)
+        elif type(response)==bool:
+            if response: 
+                self.response_labels[name].setText("Exposure Started")
+            else:
+                self.response_labels[name].setText("Error...")
+        
+    def readout_button_click(self):
+        """With an exposure complete, read out the data and save as a fits file.
+        """
+        name=NAMES[self.currentIndex()]
+        try:
+            response = self.sockets[name].send_command("READOUT")
+        except:
+            response = "*** Connection Error ***"
+            return
+        if type(response)==str or type(response)==unicode:
+            self.response_labels[name].setText(response)
+            return
+        if type(response)!=list:
+            self.response_labels[name].setText("Did not receive an image!")
+            return
+        if FITS_SAVING:
+            header = pyfits.Header()
+            header['LOCTIME'] = time.ctime(response[1][0])
+            header['EXPTIME'] = response[1][1]
+            pyfits.writeto(str(self.save_dir_line_edit.text()) + name+ "{:03d}.fits".format(self.fnum[name]), 
+                response[2], header, clobber=True)
+        else:
+            print("Need pyfits to actually save the file!")
+        self.fnum[name] += 1
+
+    def command_enter(self):
+        """Parse the LineEdit string and send_to_server
+        """
+        name = NAMES[self.currentIndex()]
+        self.send_to_server(str(self.line_edits[name].text()))
+
+    def send_to_server(self, text):
+        """Send a command to the server, dependent on the current tab.
+        """
+        name = NAMES[self.currentIndex()]
+        try:
+            response = self.sockets[name].send_command(text)
+        except:
+            response = "*** Connection Error ***"
+        if type(response)==str or type(response)==unicode:
+            self.response_labels[name].setText(response)
+        elif type(response)==bool:
+            if response: 
+                self.response_labels[name].setText("Success!")
+            else:
+                self.response_labels[name].setText("Failure!")
+        self.line_edits[name].setText("")
+
+app = QApplication(sys.argv)
+if len(sys.argv) > 1:
+    myapp = VeloceGui(IP=sys.argv[1])
+else:
+    myapp = VeloceGui(IP="10.88.90.205") #velocesvr. On internal network, 10.88.90.205
+myapp.show()
+sys.exit(app.exec_())      
+            
+
+

@@ -338,7 +338,7 @@ class ThermalControl:
         temp_inv = aVal + bVal*np.log(resistance) + cVal*((np.log(resistance))**3)
         tempKelv = 1/(temp_inv)
         tempCelc = tempKelv -273.15
-        return tempCelc - T_OFFSETS[ix]
+        return tempCelc + T_OFFSETS[ix]
         
     def getresistance(self, ix, invert_voltage=True):
         """Return one resistance as a float. See Roberton's the

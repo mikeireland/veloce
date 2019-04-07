@@ -123,12 +123,12 @@ def plot_all(logfile, line='-', smooth=1):
     #t6 = []
     #t7 = []
     for row in rr:
-        if row[3].lstrip() == 'TEMPS':
-            tm.append(float(row[1]))
-            t1.append(float(row[4]))
-            t2.append(float(row[5]))
-            t3.append(float(row[6]))
-            t4.append(float(row[7]))
+        if row[4].lstrip() == 'TEMPS':
+            tm.append(float(row[2]))
+            t1.append(float(row[5]))
+            t2.append(float(row[6]))
+            t3.append(float(row[7]))
+            t4.append(float(row[8]))
             #t5.append(float(row[8]))
             #t6.append(float(row[9]))
             #t7.append(float(row[10]))
@@ -138,6 +138,7 @@ def plot_all(logfile, line='-', smooth=1):
     t3 = np.array(t3)
     t4 = np.array(t4)
     tm_datetime = np.array([datetime.datetime.fromtimestamp(t) for t in tm])
+
 
     #ax=plt.subplot()
     plt.clf()
@@ -158,7 +159,8 @@ def plot_all(logfile, line='-', smooth=1):
 
 if __name__=="__main__":
     #tm_datetime, tm, t1, t2, t3 = plot_all('thermal_control.log', smooth=21)
-    tm_datetime, tm, t1, t2, t3 = plot_all('thermal_19jan.log',smooth=11)
+    #tm_datetime, tm, t1, t2, t3 = plot_all('thermal_19jan.log',smooth=11)
+    tm_datetime, tm, t1, t2, t3 = plot_all('/Users/mireland/data/veloce/thermal_control_20180611.log', smooth=11)
     if (False):
         start = datetime.datetime(2017,9,1,14)
         stop = datetime.datetime(2017,9,1,15)
